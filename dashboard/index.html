@@ -2432,6 +2432,15 @@ function mktgRawChannels(){
 function setMktgRegion(k){ STATE.mktgRegion=k; render(); }
 function setMktgVersion(k){ STATE.mktgVersion=k; render(); }
 function toggleMktgAdv(){ STATE.mktgAdvOpen = (STATE.mktgAdvOpen === false); render(); }
+// Drill panel: show/hide the individual transaction lines (default collapsed — category groupings show by default)
+function toggleReconLines(headEl){
+  const lines = headEl.parentElement.querySelector('.recon-lines');
+  if (!lines) return;
+  const show = lines.style.display === 'none';
+  lines.style.display = show ? '' : 'none';
+  const caret = headEl.querySelector('.recon-caret');
+  if (caret) caret.innerHTML = show ? '&#9662;' : '&#9656;';
+}
 function renderMarketingSummary(){
   const wrap = document.getElementById('matrix-wrap');
   const titleEl = document.getElementById('matrix-card-title');
@@ -3620,8 +3629,8 @@ function expansionHTML(a){
     catAgg[b.id].count  += 1;
   });
   const catRows2 = Object.values(catAgg).sort((x,y) => Math.max(Math.abs(y.actual),Math.abs(y.cmpA)) - Math.max(Math.abs(x.actual),Math.abs(x.cmpA)));
-  const catSummaryHtml = catRows2.length > 1 ? `<div class="recon" style="margin-bottom:8px">
-    <div class="recon-h">By Category <span class="meta">${catRows2.length} categories</span></div>
+  const catSummaryHtml = catRows2.length > 0 ? `<div class="recon" style="margin-bottom:8px">
+    <div class="recon-h">By Category <span class="meta">${catRows2.length} categor${catRows2.length===1?'y':'ies'}</span></div>
     <table><thead><tr><th style="width:38%">Category</th><th class="amt">${labelOf(STATE.cmpA)}</th><th class="amt">${labelOf(STATE.cmpB)}</th><th class="amt">Actual</th><th class="amt">vs ${labelOf(STATE.cmpA)}</th></tr></thead><tbody>
     ${catRows2.map(g => {
       const vs = g.actual - g.cmpA;
@@ -3630,11 +3639,8 @@ function expansionHTML(a){
     }).join('')}
     </tbody></table></div>` : '';
 
-  const reconBlock = `${catSummaryHtml}<div class="recon">
-    <div class="recon-h">Vendor / line-item reconciliation
-      <span class="meta">${rollupLabel()} · ${recon.length} line${recon.length === 1 ? '' : 's'}</span>
-    </div>
-    ${recon.length ? `<table>
+  const untaggedCount = (catAgg['__other__'] && catAgg['__other__'].count) || 0;
+  const reconLinesInner = recon.length ? `<table>
       <thead><tr>
         <th style="width:38%">Vendor / Description</th>
         <th class="amt">${labelOf(STATE.cmpA)}</th>
@@ -3659,7 +3665,13 @@ function expansionHTML(a){
           </tr>`;
         }).join('')}
       </tbody>
-    </table>${recon.length > 200 ? `<div style="font-size:10.5px; color:var(--gray); padding:6px 12px">+ ${recon.length - 200} more lines not shown</div>` : ''}` : '<div class="empty-state">No forecast or actuals activity in this period.</div>'}
+    </table>${recon.length > 200 ? `<div style="font-size:10.5px; color:var(--gray); padding:6px 12px">+ ${recon.length - 200} more lines not shown</div>` : ''}` : '<div class="empty-state">No forecast or actuals activity in this period.</div>';
+  const reconBlock = `${catSummaryHtml}<div class="recon">
+    <div class="recon-h" style="cursor:pointer" onclick="toggleReconLines(this)" title="Show / hide individual transactions">
+      <span class="recon-caret">&#9656;</span> Expand Transactions
+      <span class="meta">${recon.length} line${recon.length === 1 ? '' : 's'}${untaggedCount ? ` · <strong style="color:#b45309">${untaggedCount} untagged</strong>` : ' · all tagged'}</span>
+    </div>
+    <div class="recon-lines" style="display:none;margin-top:6px">${reconLinesInner}</div>
   </div>`;
 
   const cm = a.actuals_by_company[STATE.fy] || {};
