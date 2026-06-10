@@ -1937,21 +1937,23 @@ function render(){
   const isFreightTab = ACTIVE_SLUG === 'outbound-freight';
   const isWarehouseMatrixTab = ACTIVE_SLUG === 'total-warehousing';
   const isMarginFromSalesTab = ACTIVE_SLUG === 'margin-from-sales';
-  const isMarketingSummary = (ACTIVE_SLUG === 'marketing' || ACTIVE_SLUG === 'media') && !STATE.subSection;
-  const isMediaRegion = ACTIVE_SLUG === 'media' && !!STATE.subSection;  // region tab: rollup matrix + drilldown grid
+  // Only the MEDIA tab uses the channel matrix. OPEX (marketing) — top-level AND regions —
+  // uses the standard BvA grid (top-level = rollup of all regions in the same format).
+  const isMediaSummary = ACTIVE_SLUG === 'media' && !STATE.subSection;   // media rollup → channel matrix only
+  const isMediaRegion  = ACTIVE_SLUG === 'media' && !!STATE.subSection;  // media region → matrix + drilldown grid
   document.getElementById('dept-rollup-card').style.display = 'none';
   document.getElementById('company-rollup-card').style.display = 'none';
-  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarketingSummary || isMediaRegion) ? '' : 'none';
-  // Hide the BvA grid when on the Margin from Sales tab (that tab shows the margin card as primary content)
-  document.getElementById('bva-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMarketingSummary) ? 'none' : '';
+  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMediaSummary || isMediaRegion) ? '' : 'none';
+  // Hide the BvA grid when on the Margin from Sales tab or the media rollup (matrix-only)
+  document.getElementById('bva-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMediaSummary) ? 'none' : '';
   if (isFreightTab) renderChannelMatrix();
   else if (isWarehouseMatrixTab) renderWarehouseMatrix();
-  else if (isMarketingSummary || isMediaRegion) renderMarketingSummary();
-  if (isMediaRegion || (!isFreightTab && !isWarehouseMatrixTab && !isMarginFromSalesTab && !isMarketingSummary)) renderTable();
+  else if (isMediaSummary || isMediaRegion) renderMarketingSummary();
+  if (isMediaRegion || (!isFreightTab && !isWarehouseMatrixTab && !isMarginFromSalesTab && !isMediaSummary)) renderTable();
   if (typeof updateBvaCatSaveBar === 'function') updateBvaCatSaveBar();
 
   // Monthly breakdown card — shown when view spans multiple months (skip on special tabs)
-  renderMonthlyBreakdown(isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMarketingSummary);
+  renderMonthlyBreakdown(isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMediaSummary);
 
   // Margin from Sales card — only on the dedicated margin-from-sales tab
   renderMarginFromSales();
