@@ -2922,16 +2922,16 @@ function buildTable(){
   </tr>`);
   rows.push(`<tr class="col-row">
     <th>Category / Account</th>
-    <th class="section-val">Actual</th>
-    <th class="section-val">${labelOf(STATE.cmpA)}</th>
-    <th class="section-val">${labelOf(STATE.cmpB)}</th>
-    <th class="section-val">${labelOf(STATE.cmpPY)}</th>
-    <th class="section-d">${labelOf(STATE.cmpA)}</th>
-    <th class="section-d">${labelOf(STATE.cmpB)}</th>
-    <th class="section-d">${labelOf(STATE.cmpPY)}</th>
-    <th class="section-p">${labelOf(STATE.cmpA)}</th>
-    <th class="section-p">${labelOf(STATE.cmpB)}</th>
-    <th class="section-p">${labelOf(STATE.cmpPY)}</th>
+    <th class="section-val">PY</th>
+    <th class="section-val">AOP</th>
+    <th class="section-val">8+4</th>
+    <th class="section-val">Actuals</th>
+    <th class="section-d">PY</th>
+    <th class="section-d">AOP</th>
+    <th class="section-d">8+4</th>
+    <th class="section-p">PY</th>
+    <th class="section-p">AOP</th>
+    <th class="section-p">8+4</th>
   </tr>`);
   rows.push(`</thead><tbody>`);
 
@@ -2987,8 +2987,8 @@ function buildTable(){
     const adj = rollup(getAddbackArray());
     if (Math.abs(adj) > 0.5){
       rows.push(`<tr class="acct-row" style="opacity:.65"><td style="font-style:italic;color:var(--gray)">EBITDA Addback (proforma — routed to accounts above)</td>
-        <td class="num section-val muted">${fmtUSD(adj)}</td>
         <td class="num section-val muted">—</td><td class="num section-val muted">—</td><td class="num section-val muted">—</td>
+        <td class="num section-val muted">${fmtUSD(adj)}</td>
         <td class="num section-d muted">—</td><td class="num section-d muted">—</td><td class="num section-d muted">—</td>
         <td class="num section-p muted">—</td><td class="num section-p muted">—</td><td class="num section-p muted">—</td>
       </tr>`);
@@ -3033,32 +3033,32 @@ function catRow(cat, actual, a, b, py){
   }
   return `<tr class="cat-row" data-cat="${cat}">
     <td>${cat}${commentIcon}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    <td class="num section-val">${fmtUSD(a)}</td>
-    <td class="num section-val">${fmtUSD(b)}</td>
     <td class="num section-val">${fmtUSD(py)}</td>
-    ${deltaCells(actual, [a, b, py], isRevenueCat(cat))}
+    <td class="num section-val">${fmtUSD(b)}</td>
+    <td class="num section-val">${fmtUSD(a)}</td>
+    <td class="num section-val">${fmtUSD(actual)}</td>
+    ${deltaCells(actual, [py, b, a], isRevenueCat(cat))}
   </tr>${commentRow}`;
 }
 function acctRow(cat, a, actual, cmpA, cmpB, cmpPY){
   const acctLabel = a.reporting_account + (a.account_name && a.account_name !== a.reporting_account ? ' — ' + a.account_name : '');
   return `<tr class="acct-row" data-parent-cat="${cat}" data-acct="${a.reporting_account}" style="display:none">
     <td>${acctLabel}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    <td class="num section-val">${fmtUSD(cmpA)}</td>
-    <td class="num section-val">${fmtUSD(cmpB)}</td>
     <td class="num section-val">${fmtUSD(cmpPY)}</td>
-    ${deltaCells(actual, [cmpA, cmpB, cmpPY], isRevenueCat(cat))}
+    <td class="num section-val">${fmtUSD(cmpB)}</td>
+    <td class="num section-val">${fmtUSD(cmpA)}</td>
+    <td class="num section-val">${fmtUSD(actual)}</td>
+    ${deltaCells(actual, [cmpPY, cmpB, cmpA], isRevenueCat(cat))}
   </tr>`;
 }
 function totalRow(label, actual, a, b, py){
   return `<tr class="subtotal">
     <td>${label}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    <td class="num section-val">${fmtUSD(a)}</td>
-    <td class="num section-val">${fmtUSD(b)}</td>
     <td class="num section-val">${fmtUSD(py)}</td>
-    ${deltaCells(actual, [a, b, py], false)}
+    <td class="num section-val">${fmtUSD(b)}</td>
+    <td class="num section-val">${fmtUSD(a)}</td>
+    <td class="num section-val">${fmtUSD(actual)}</td>
+    ${deltaCells(actual, [py, b, a], false)}
   </tr>`;
 }
 
