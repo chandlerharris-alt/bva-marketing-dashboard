@@ -1937,23 +1937,19 @@ function render(){
   const isFreightTab = ACTIVE_SLUG === 'outbound-freight';
   const isWarehouseMatrixTab = ACTIVE_SLUG === 'total-warehousing';
   const isMarginFromSalesTab = ACTIVE_SLUG === 'margin-from-sales';
-  // Only the MEDIA tab uses the channel matrix. OPEX (marketing) — top-level AND regions —
-  // uses the standard BvA grid (top-level = rollup of all regions in the same format).
-  const isMediaSummary = ACTIVE_SLUG === 'media' && !STATE.subSection;   // media rollup → channel matrix only
-  const isMediaRegion  = ACTIVE_SLUG === 'media' && !!STATE.subSection;  // media region → matrix + drilldown grid
+  // Media + OPEX both use the BvA grid. buildTable() branches to the Paid/Non-Paid Media
+  // layout for the media tab. Only Outbound Freight / Total Warehousing use the matrix.
   document.getElementById('dept-rollup-card').style.display = 'none';
   document.getElementById('company-rollup-card').style.display = 'none';
-  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMediaSummary || isMediaRegion) ? '' : 'none';
-  // Hide the BvA grid when on the Margin from Sales tab or the media rollup (matrix-only)
-  document.getElementById('bva-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMediaSummary) ? 'none' : '';
+  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab) ? '' : 'none';
+  document.getElementById('bva-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab) ? 'none' : '';
   if (isFreightTab) renderChannelMatrix();
   else if (isWarehouseMatrixTab) renderWarehouseMatrix();
-  else if (isMediaSummary || isMediaRegion) renderMarketingSummary();
-  if (isMediaRegion || (!isFreightTab && !isWarehouseMatrixTab && !isMarginFromSalesTab && !isMediaSummary)) renderTable();
+  else if (!isMarginFromSalesTab) renderTable();
   if (typeof updateBvaCatSaveBar === 'function') updateBvaCatSaveBar();
 
-  // Monthly breakdown card — shown when view spans multiple months (skip on special tabs)
-  renderMonthlyBreakdown(isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMediaSummary);
+  // Monthly breakdown card — skip on matrix/margin tabs and the media grid (revenue would dominate)
+  renderMonthlyBreakdown(isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || ACTIVE_SLUG === 'media');
 
   // Margin from Sales card — only on the dedicated margin-from-sales tab
   renderMarginFromSales();
@@ -2884,6 +2880,7 @@ function favClass(actual, vs, isRev){
 }
 
 function buildTable(){
+  if (ACTIVE_SLUG === 'media') return buildMediaGrid();
   const stdOrder = getStandardCategoryOrder();
   const stdSet = new Set(stdOrder);
   // Normalize categories and bucket unknowns/legacy into Other Expenses
@@ -3060,6 +3057,65 @@ function totalRow(label, actual, a, b, py){
     <td class="num section-val">${fmtUSD(actual)}</td>
     ${deltaCells(actual, [py, b, a], false)}
   </tr>`;
+}
+
+// ===== Paid / Non-Paid Media grid (BvA layout: Revenue → Paid → Non-Paid → Total Advertising,
+// with % -of-Revenue rows whose variances are in basis points) =====
+const MEDIA_PAID_ACCTS = ['6736000','6740000'];  // Advertising - Paid Media + Top of Funnel
+function buildMediaGrid(){
+  const adByRA = {}; (DATA.accounts||[]).forEach(a => { adByRA[String(a.reporting_account)] = a; });
+  const paidAccts = MEDIA_PAID_ACCTS.map(r => adByRA[r]).filter(Boolean);
+  const nonpaidAccts = [...MKTG_AD_ACCTS].filter(r => !MEDIA_PAID_ACCTS.includes(r)).sort().map(r => adByRA[r]).filter(Boolean);
+  const revAccts = (DATA.accounts||[]).filter(a => isRevenueAccount(a.reporting_account));
+  const sumV = accs => ({
+    actual: accs.reduce((s,a)=>s+rollup(getActuals(a)),0),
+    a:      accs.reduce((s,a)=>s+rollup(effectiveSeries(a,STATE.cmpA)),0),
+    b:      accs.reduce((s,a)=>s+rollup(effectiveSeries(a,STATE.cmpB)),0),
+    py:     accs.reduce((s,a)=>s+rollup(getSeries(a,STATE.cmpPY)),0),
+  });
+  const acctV = a => [rollup(getActuals(a)), rollup(effectiveSeries(a,STATE.cmpA)), rollup(effectiveSeries(a,STATE.cmpB)), rollup(getSeries(a,STATE.cmpPY))];
+  const rev = sumV(revAccts), paid = sumV(paidAccts), nonpaid = sumV(nonpaidAccts);
+  const totAdv = {actual:paid.actual+nonpaid.actual, a:paid.a+nonpaid.a, b:paid.b+nonpaid.b, py:paid.py+nonpaid.py};
+
+  const rows = [];
+  rows.push(`<table class="bva"><thead>`);
+  rows.push(`<tr class="group-row"><th></th><th colspan="4" class="section-val">Values</th><th colspan="3" class="section-d">$ Variance (vs Actual)</th><th colspan="3" class="section-p">% Variance (vs Actual)</th></tr>`);
+  rows.push(`<tr class="col-row"><th>Revenue / Advertising</th>
+    <th class="section-val">PY</th><th class="section-val">AOP</th><th class="section-val">8+4</th><th class="section-val">Actuals</th>
+    <th class="section-d">PY</th><th class="section-d">AOP</th><th class="section-d">8+4</th>
+    <th class="section-p">PY</th><th class="section-p">AOP</th><th class="section-p">8+4</th></tr>`);
+  rows.push(`</thead><tbody>`);
+  rows.push(revRowMedia('Gross Revenue', rev));
+  rows.push(catRow('Paid Media', paid.actual, paid.a, paid.b, paid.py));
+  paidAccts.forEach(a => { const [ac,cA,cB,cPY] = acctV(a); rows.push(acctRow('Paid Media', a, ac, cA, cB, cPY)); });
+  rows.push(pctRowMedia('Paid Media % of Revenue', paid, rev));
+  rows.push(catRow('Non-Paid Media', nonpaid.actual, nonpaid.a, nonpaid.b, nonpaid.py));
+  nonpaidAccts.forEach(a => { const [ac,cA,cB,cPY] = acctV(a); rows.push(acctRow('Non-Paid Media', a, ac, cA, cB, cPY)); });
+  rows.push(pctRowMedia('Non-Paid Media % of Revenue', nonpaid, rev));
+  rows.push(totalRow('Total Advertising', totAdv.actual, totAdv.a, totAdv.b, totAdv.py));
+  rows.push(pctRowMedia('Total Advertising % of Revenue', totAdv, rev));
+  rows.push('</tbody></table>');
+  return rows.join('');
+}
+function revRowMedia(label, v){
+  return `<tr class="subtotal"><td>${label}</td>
+    <td class="num section-val">${fmtUSD(v.py)}</td><td class="num section-val">${fmtUSD(v.b)}</td><td class="num section-val">${fmtUSD(v.a)}</td><td class="num section-val">${fmtUSD(v.actual)}</td>
+    ${deltaCells(v.actual, [v.py, v.b, v.a], true)}</tr>`;
+}
+function pctRowMedia(label, grp, rev){
+  const pv = (g, r) => (r && Math.abs(r) > 0.5) ? g/r : null;
+  const pPY=pv(grp.py,rev.py), pB=pv(grp.b,rev.b), pA=pv(grp.a,rev.a), pAct=pv(grp.actual,rev.actual);
+  const fmtP = p => p==null ? '—' : (p*100).toFixed(1)+'%';
+  const bpsCell = pVer => {
+    if (pVer==null || pAct==null) return `<td class="num section-d muted">—</td>`;
+    const bps = Math.round((pVer - pAct) * 10000);  // forecast% − actual% : positive = actual ratio lower = favorable
+    const cls = bps > 0 ? 'fav' : bps < 0 ? 'unfav' : 'muted';
+    return `<td class="num section-d ${cls}">${bps>0?'+':''}${bps} bps</td>`;
+  };
+  return `<tr class="media-pct-row" style="font-style:italic;background:#eef4f8;font-weight:600;color:#01323C"><td>${label}</td>
+    <td class="num section-val">${fmtP(pPY)}</td><td class="num section-val">${fmtP(pB)}</td><td class="num section-val">${fmtP(pA)}</td><td class="num section-val">${fmtP(pAct)}</td>
+    ${bpsCell(pPY)}${bpsCell(pB)}${bpsCell(pA)}
+    <td class="num section-p muted">—</td><td class="num section-p muted">—</td><td class="num section-p muted">—</td></tr>`;
 }
 
 // ===== Per-company sectioned BvA table (used when manifest breakdown === 'company') =====
