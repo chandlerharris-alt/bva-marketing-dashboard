@@ -674,7 +674,7 @@ tr:hover .fc-del-icon{opacity:1}
         </div>
       </div>
     </div>
-    <div class="field"><label>Actuals</label>
+    <div class="field" style="display:none"><label>Actuals</label>
       <div class="pill-group" id="adj-toggle">
         <button data-v="UNADJ">Unadj</button>
         <button data-v="ADJ" class="active">Adj (proforma)</button>
@@ -1447,6 +1447,7 @@ function initTab(){
   applyPrepaidToForecasts();
   // Per-tab account scope: 'marketing' (OPEX) hides advertising accounts; 'media' keeps only advertising + revenue.
   if (DATA && Array.isArray(DATA.accounts)) DATA.accounts = scopeAccountsForTab(DATA.accounts);
+  _mktgRawCh = null;  // reset channel cache so each tab's summary recomputes from its scoped accounts
   document.getElementById('refreshed-at').textContent = 'Refreshed: ' + DATA.meta.refreshed_at.replace('T',' ');
   document.getElementById('sb-refreshed').textContent = 'Refreshed ' + DATA.meta.refreshed_at.slice(0,10);
   const dn = (DATA.meta.dept_numbers || []).join(', ') || DATA.meta.dept_number || '';
