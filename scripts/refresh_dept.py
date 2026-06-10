@@ -774,9 +774,13 @@ def main():
             "amount": r.get("amount") or 0.0,
         })
 
-    # Attach drill list to its account record (first 200 lines per RA — keep file size sane)
+    # Attach drill list to its account record. The drill SQL returns oldest-first, so
+    # sort MOST-RECENT-first before capping — otherwise the cap drops current-period
+    # transactions (the ones users actually drill into). Cap keeps file size sane.
     for (ra, _an), rec in accounts.items():
-        rec["drill"] = drill_by_account.get(ra, [])[:300]
+        lst = drill_by_account.get(ra, [])
+        lst.sort(key=lambda x: (x.get("fy") or 0, x.get("fm") or 0, abs(x.get("amount") or 0)), reverse=True)
+        rec["drill"] = lst[:500]
 
     # ---------- Discover available versions across all forecast tables ----------
     all_versions: set[str] = set()
