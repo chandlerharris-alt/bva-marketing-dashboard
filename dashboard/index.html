@@ -656,7 +656,7 @@ tr:hover .fc-del-icon{opacity:1}
     <div class="field"><label>Compare A</label><select id="cmp-a"></select></div>
     <div class="field"><label>Compare B</label><select id="cmp-b"></select></div>
     <div class="field"><label>Prior Period</label><select id="cmp-py"></select></div>
-    <div class="field"><label>Source Companies</label>
+    <div class="field" id="company-field"><label>Source Companies</label>
       <div class="multisel" id="co-multisel">
         <button class="multisel-trigger" id="co-trigger">All companies</button>
         <div class="multisel-panel" id="co-panel">
@@ -1512,6 +1512,14 @@ function initTab(){
   });
 
   setupComparisonPickers();
+  // The Media tab uses on-grid Channel + Region buttons — hide the redundant filterbar dropdowns.
+  {
+    const _isMedia = ACTIVE_SLUG === 'media';
+    const _ch = document.getElementById('channel-field');
+    const _co = document.getElementById('company-field');
+    if (_isMedia){ if(_ch) _ch.style.display='none'; if(_co) _co.style.display='none'; }
+    else if (_co) { _co.style.display=''; }
+  }
   render();
 
   // Load variance comments for the current FY so the BvA grid + top variances
