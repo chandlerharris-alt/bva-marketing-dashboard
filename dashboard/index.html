@@ -2112,7 +2112,10 @@ function isRevenueAccount(ra){
 
 // All revenue account records from DATA.accounts
 function revenueRecs(){
-  return (DATA.accounts || []).filter(a => a.category === 'Revenue' || isRevenueAccount(a.reporting_account));
+  // Gross revenue = base Sales (4500000). Subscription accounts (4500777/4500774) are
+  // held as DEFERRED in the GL (net negative), so they are intentionally excluded here;
+  // recognized subscription revenue is an Adaptive figure (see Marketing summary notes).
+  return (DATA.accounts || []).filter(a => isRevenueAccount(a.reporting_account));
 }
 
 // Sum revenue actuals across all revenue accounts for a given channel × region.
@@ -2404,6 +2407,7 @@ function mktgRawChannels(){
 }
 function setMktgRegion(k){ STATE.mktgRegion=k; render(); }
 function setMktgVersion(k){ STATE.mktgVersion=k; render(); }
+function toggleMktgAdv(){ STATE.mktgAdvOpen = (STATE.mktgAdvOpen === false); render(); }
 function renderMarketingSummary(){
   const wrap = document.getElementById('matrix-wrap');
   const titleEl = document.getElementById('matrix-card-title');
@@ -2421,15 +2425,17 @@ function renderMarketingSummary(){
     const fcKey = (DATA.meta.available_versions||[]).find(v=>/8\+4 Final/.test(v) && v.endsWith('FY'+fy)) || ('FY26: 8+4 Final | FY'+fy);
     const ver = STATE.mktgVersion;
     function cellRecs(recs, d){
-      const rch = rawByDisp[d]||[];
-      const f = (vmode)=>{ let t=0; recs.forEach(rec=>rch.forEach(rc=>regions.forEach(reg=>{ const arr=vmode==='FC'?forecastMonthlyChannelRegion(rec,rc,reg,fcKey):actualMonthlyChannelRegion(rec,fy,rc,reg); t+=sumWin(arr);}))); return t; };
-      return ver==='DELTA' ? (f('ACT')-f('FC')) : f(ver==='FC'?'FC':'ACT');
+      const rch = rawByDisp[d]||[]; let act=0, fc=0;
+      recs.forEach(rec=>rch.forEach(rc=>regions.forEach(reg=>{ act+=sumWin(actualMonthlyChannelRegion(rec,fy,rc,reg)); fc+=sumWin(forecastMonthlyChannelRegion(rec,rc,reg,fcKey)); })));
+      return {act, fc};
     }
     function cellRev(d){
-      const rch = rawByDisp[d]||[];
-      const f = (vmode)=>{ let t=0; rch.forEach(rc=>regions.forEach(reg=>{ const arr=vmode==='FC'?revenueForecastMonthlyChannelRegion(rc,reg,fcKey):revenueActualMonthlyChannelRegion(fy,rc,reg); t+=sumWin(arr);})); return t; };
-      return ver==='DELTA' ? (f('ACT')-f('FC')) : f(ver==='FC'?'FC':'ACT');
+      const rch = rawByDisp[d]||[]; let act=0, fc=0;
+      rch.forEach(rc=>regions.forEach(reg=>{ act+=sumWin(revenueActualMonthlyChannelRegion(fy,rc,reg)); fc+=sumWin(revenueForecastMonthlyChannelRegion(rc,reg,fcKey)); }));
+      return {act, fc};
     }
+    const dispVal = c => ver==='ACT' ? c.act : ver==='FC' ? c.fc : (c.act - c.fc);
+    const series = valFn => { const arr=disp.map(d=>valFn(d)); arr.push({act:arr.reduce((s,c)=>s+c.act,0), fc:arr.reduce((s,c)=>s+c.fc,0)}); return arr; };
     const accts = DATA.accounts||[];
     const adRecs = accts.filter(a=>MKTG_AD_ACCTS.has(a.reporting_account));
     const opexRecs = accts.filter(a=>!MKTG_AD_ACCTS.has(a.reporting_account) && a.category!=='Revenue');
@@ -2449,33 +2455,74 @@ function renderMarketingSummary(){
     h += '<div class="bva-wrap"><table class="bva"><thead><tr><th style="text-align:left">Line item</th>';
     cols.forEach(c=> h+=`<th class="num">${c}</th>`);
     h += '</tr></thead><tbody>';
-    const fmt = v => (Math.abs(v)<0.5? '—' : fmtUSD(v));
-    const rowVals = recs => { const v=disp.map(d=>cellRecs(recs,d)); v.push(v.reduce((a,b)=>a+b,0)); return v; };
-    const revVals = () => { const v=disp.map(d=>cellRev(d)); v.push(v.reduce((a,b)=>a+b,0)); return v; };
-    function line(label, vals, cls, indent){
-      let r=`<tr class="${cls||''}"><td style="text-align:left;${indent?'padding-left:24px;color:#555':''}">${label}</td>`;
-      vals.forEach(v=> r+=`<td class="num">${fmt(v)}</td>`);
-      return r+'</tr>';
+    const fmt = v => (Math.abs(v)<0.5 ? '—' : fmtUSD(v));
+    const colBg = i => (i===cols.length-1) ? '#e8eef1' : (i%2===0 ? '#f6f9fb' : '#ffffff');
+    // a value <td>: column shading + (in Δ view) favorable/unfavorable colour
+    function vcell(c, i, isRev, extra){
+      const v = dispVal(c);
+      let css = `background:${colBg(i)};${extra||''}`;
+      if (ver==='DELTA' && Math.abs(v)>=0.5){
+        const fav = isRev ? (v>0) : (v<0);   // revenue up = good; spend down = good
+        css += fav ? ';color:#0a8a5f;font-weight:600' : ';color:#c0392b;font-weight:600';
+      }
+      return `<td class="num" style="${css}">${fmt(v)}</td>`;
     }
-    const rev = revVals();
-    h += line('Gross Revenue', rev, 'subtotal-row');
-    const adv = rowVals(adRecs);
-    h += line('Advertising', adv, 'subtotal-row');
-    adRecs.slice().sort((a,b)=>a.reporting_account.localeCompare(b.reporting_account)).forEach(rec=>{
-      h += line(rec.reporting_account+' — '+(rec.account_name||''), rowVals([rec]), '', true);
+    function rowSeries(label, ser, opts){
+      opts=opts||{};
+      let style = opts.rowStyle||'';
+      if (opts.onclick) style += ';cursor:pointer';
+      let r = `<tr style="${style}"${opts.onclick?` onclick="${opts.onclick}"`:''}>`;
+      r += `<td style="text-align:left;${opts.tdStyle||''}">${label}</td>`;
+      ser.forEach((c,i)=> r += vcell(c,i,!!opts.isRev,opts.cellStyle));
+      return r + '</tr>';
+    }
+
+    // header row
+    h += '<div class="bva-wrap"><table class="bva" style="border-collapse:collapse"><thead><tr>';
+    h += '<th style="text-align:left;background:#01323C;color:#fff;padding:8px 10px">Line item</th>';
+    cols.forEach((c,i)=> h += `<th class="num" style="background:#01323C;color:#fff;padding:8px 10px${i===cols.length-1?';border-left:2px solid #fff':''}">${c}</th>`);
+    h += '</tr></thead><tbody>';
+
+    // Gross Revenue
+    const revS = series(d=>cellRev(d));
+    h += rowSeries('Gross Revenue', revS, {isRev:true, rowStyle:'background:#eef4ef', tdStyle:'font-weight:700;color:#01323C'});
+
+    // Advertising group (collapsible)
+    const advS = series(d=>cellRecs(adRecs,d));
+    const open = STATE.mktgAdvOpen !== false;
+    h += rowSeries((open?'▾':'▸')+' Advertising', advS, {rowStyle:'background:#eaf1f5', tdStyle:'font-weight:700;color:#01323C', cellStyle:'font-weight:700', onclick:'toggleMktgAdv()'});
+    if (open){
+      adRecs.slice().sort((a,b)=>a.reporting_account.localeCompare(b.reporting_account)).forEach(rec=>{
+        const ser = series(d=>cellRecs([rec],d));
+        h += rowSeries(rec.reporting_account+' — '+(rec.account_name||''), ser, {tdStyle:'padding-left:26px;color:#555;border-left:3px solid #cfdbe2', cellStyle:'color:#555'});
+      });
+    }
+
+    // Advertising % of Revenue — emphasised
+    let pr = '<tr style="background:#dde9ef;border-top:1px solid #b9cdd7;border-bottom:1px solid #b9cdd7"><td style="text-align:left;font-weight:800;color:#01323C">Advertising % of Revenue</td>';
+    advS.forEach((ac,i)=>{
+      const rc = revS[i]; let txt='—';
+      if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = fmtPct(ap-fp); }
+      else { const a = ver==='ACT'?ac.act:ac.fc, r = ver==='ACT'?rc.act:rc.fc; txt = (r&&Math.abs(r)>0.5) ? fmtPct(a/r) : '—'; }
+      pr += `<td class="num" style="background:${colBg(i)};font-weight:800;color:#01323C">${txt}</td>`;
     });
-    let pr='<tr class="region-row"><td style="text-align:left;font-style:italic;color:#777">Advertising % of Revenue</td>';
-    adv.forEach((v,i)=>{ const rv=rev[i]; pr+=`<td class="num" style="font-style:italic;color:#777">${rv&&Math.abs(rv)>0.5?fmtPct(v/rv):'—'}</td>`; });
-    pr+='</tr>'; h+=pr;
-    h += '<tr><td colspan="'+(cols.length+1)+'" style="height:8px;border:0"></td></tr>';
-    let opexTot = cols.map(()=>0);
-    cats.forEach(cat=>{
-      const vals = rowVals(opexRecs.filter(a=>a.category===cat));
-      vals.forEach((v,i)=>opexTot[i]+=v);
-      h += line(cat, vals, '');
+    pr += '</tr>'; h += pr;
+
+    // spacer
+    h += '<tr><td colspan="'+(cols.length+1)+'" style="height:10px;border:0;background:#fff"></td></tr>';
+
+    // OPEX categories
+    let opexTotS = cols.map(()=>({act:0,fc:0}));
+    cats.forEach((cat,ci)=>{
+      const recs = opexRecs.filter(a=>a.category===cat);
+      const ser = series(d=>cellRecs(recs,d));
+      ser.forEach((c,i)=>{ opexTotS[i].act+=c.act; opexTotS[i].fc+=c.fc; });
+      h += rowSeries(cat, ser, {});
     });
-    h += line('Total OPEX', opexTot, 'subtotal-row');
-    h += line('Total Marketing', opexTot.map((v,i)=>v+adv[i]), 'grand-row');
+    h += rowSeries('Total OPEX', opexTotS, {rowStyle:'background:#eaf1f5', tdStyle:'font-weight:700;color:#01323C', cellStyle:'font-weight:700'});
+    const totMktS = opexTotS.map((c,i)=>({act:c.act+advS[i].act, fc:c.fc+advS[i].fc}));
+    h += rowSeries('Total Marketing', totMktS, {rowStyle:'background:#cfdde4;border-top:2px solid #01323C', tdStyle:'font-weight:800;color:#01323C', cellStyle:'font-weight:800'});
+
     h += '</tbody></table></div>';
     wrap.innerHTML = h;
   } catch(e){
