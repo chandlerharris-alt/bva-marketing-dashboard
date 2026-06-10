@@ -1448,6 +1448,7 @@ function initTab(){
   // Per-tab account scope: 'marketing' (OPEX) hides advertising accounts; 'media' keeps only advertising + revenue.
   if (DATA && Array.isArray(DATA.accounts)) DATA.accounts = scopeAccountsForTab(DATA.accounts);
   _mktgRawCh = null;  // reset channel cache so each tab's summary recomputes from its scoped accounts
+  STATE.mktgRegion = 'GLOBAL';  // reset summary region toggle to the default on each tab load
   document.getElementById('refreshed-at').textContent = 'Refreshed: ' + DATA.meta.refreshed_at.replace('T',' ');
   document.getElementById('sb-refreshed').textContent = 'Refreshed ' + DATA.meta.refreshed_at.slice(0,10);
   const dn = (DATA.meta.dept_numbers || []).join(', ') || DATA.meta.dept_number || '';
@@ -2512,10 +2513,11 @@ function renderMarketingSummary(){
 
       // Advertising % of Revenue — emphasised
       let pr = '<tr style="background:#dde9ef;border-top:1px solid #b9cdd7;border-bottom:1px solid #b9cdd7"><td style="text-align:left;font-weight:800;color:#01323C">Advertising % of Revenue</td>';
+      const pct1 = x => (x*100).toFixed(1) + '%';
       advS.forEach((ac,i)=>{
         const rc = revS[i]; let txt='—';
-        if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = fmtPct(ap-fp); }
-        else { const a = ver==='ACT'?ac.act:ac.fc, r = ver==='ACT'?rc.act:rc.fc; txt = (r&&Math.abs(r)>0.5) ? fmtPct(a/r) : '—'; }
+        if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = pct1(ap-fp); }
+        else { const a = ver==='ACT'?ac.act:ac.fc, r = ver==='ACT'?rc.act:rc.fc; txt = (r&&Math.abs(r)>0.5) ? pct1(a/r) : '—'; }
         pr += `<td class="num" style="background:${colBg(i)};font-weight:800;color:#01323C">${txt}</td>`;
       });
       pr += '</tr>'; h += pr;
