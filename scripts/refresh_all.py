@@ -27,9 +27,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # Advertising accounts treated as "advertising in any department" (matches the Excel rollup).
 ADVERTISING_ACCOUNTS = "6736000,6738000,6740000,6746000,6747000,6750000,6763000,6775000,6790000"
 
+# Data-pull tabs — each triggers a refresh_dept run that writes data/<slug>.json.
 TABS = [
     {
-        "slug": "marketing", "name": "Marketing", "owner": "Marketing",
+        "slug": "marketing", "name": "OPEX", "owner": "Marketing",
         "depts": "75", "breakdown": "company",
         "actuals_sql": "actuals_marketing.sql",
         "drill_sql": "actuals_drill_marketing.sql",
@@ -39,14 +40,18 @@ TABS = [
     },
 ]
 
-# Fields the dashboard sidebar actually reads from the manifest.
-_MANIFEST_FIELDS = ("slug", "name", "owner", "depts", "breakdown")
+# Sidebar tabs (manifest). 'media' is a VIRTUAL tab that reuses marketing.json
+# (dataSlug) — it shows the Sales + Advertising view; 'marketing' shows OPEX.
+MANIFEST_TABS = [
+    {"slug": "marketing", "name": "OPEX", "owner": "Marketing", "depts": "75", "breakdown": "company"},
+    {"slug": "media", "name": "Paid / Non-Paid Media", "owner": "Marketing", "depts": "75",
+     "breakdown": "company", "virtual": True, "dataSlug": "marketing"},
+]
 
 
 def write_manifest():
     import json
-    tabs = [{k: t[k] for k in _MANIFEST_FIELDS if k in t} for t in TABS]
-    (ROOT / "data" / "manifest.json").write_text(json.dumps({"tabs": tabs}, indent=2))
+    (ROOT / "data" / "manifest.json").write_text(json.dumps({"tabs": MANIFEST_TABS}, indent=2))
 
 
 def run():

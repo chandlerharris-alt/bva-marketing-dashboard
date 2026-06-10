@@ -1445,6 +1445,8 @@ function applyPrepaidToForecasts(){
 
 function initTab(){
   applyPrepaidToForecasts();
+  // Per-tab account scope: 'marketing' (OPEX) hides advertising accounts; 'media' keeps only advertising + revenue.
+  if (DATA && Array.isArray(DATA.accounts)) DATA.accounts = scopeAccountsForTab(DATA.accounts);
   document.getElementById('refreshed-at').textContent = 'Refreshed: ' + DATA.meta.refreshed_at.replace('T',' ');
   document.getElementById('sb-refreshed').textContent = 'Refreshed ' + DATA.meta.refreshed_at.slice(0,10);
   const dn = (DATA.meta.dept_numbers || []).join(', ') || DATA.meta.dept_number || '';
@@ -1933,7 +1935,7 @@ function render(){
   const isFreightTab = ACTIVE_SLUG === 'outbound-freight';
   const isWarehouseMatrixTab = ACTIVE_SLUG === 'total-warehousing';
   const isMarginFromSalesTab = ACTIVE_SLUG === 'margin-from-sales';
-  const isMarketingSummary = ACTIVE_SLUG === 'marketing' && !STATE.subSection;
+  const isMarketingSummary = (ACTIVE_SLUG === 'marketing' || ACTIVE_SLUG === 'media') && !STATE.subSection;
   document.getElementById('dept-rollup-card').style.display = 'none';
   document.getElementById('company-rollup-card').style.display = 'none';
   document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarketingSummary) ? '' : 'none';
@@ -2376,6 +2378,13 @@ function whCompanyForecast(co, versionKey){
 
 // ===== Marketing Summary matrix — Excel "Total Marketing Spend Review" replica =====
 const MKTG_AD_ACCTS = new Set(['6736000','6738000','6740000','6746000','6747000','6750000','6763000','6775000','6790000']);
+// Per-tab account scope. 'media' = advertising + revenue (Sales by channel + ad GLs to categorize);
+// 'marketing' (OPEX) = everything EXCEPT advertising. Other tabs unchanged.
+function scopeAccountsForTab(accts){
+  if (ACTIVE_SLUG === 'media')     return accts.filter(a => MKTG_AD_ACCTS.has(a.reporting_account) || a.category === 'Revenue');
+  if (ACTIVE_SLUG === 'marketing') return accts.filter(a => !MKTG_AD_ACCTS.has(a.reporting_account));
+  return accts;
+}
 const MKTG_DISPLAY_CHANNELS = ['Wholesale','DTC','Freemotion','iFIT - Core','iFIT - App','Corp/Other'];
 const MKTG_REGION_SCOPES = {
   GLOBAL: REGION_ORDER.slice(),
@@ -2411,7 +2420,8 @@ function toggleMktgAdv(){ STATE.mktgAdvOpen = (STATE.mktgAdvOpen === false); ren
 function renderMarketingSummary(){
   const wrap = document.getElementById('matrix-wrap');
   const titleEl = document.getElementById('matrix-card-title');
-  if (titleEl && titleEl.childNodes[0]) titleEl.childNodes[0].textContent = 'Total Marketing Spend — Channel × Region ';
+  const summaryMode = (ACTIVE_SLUG === 'media') ? 'MEDIA' : 'OPEX';
+  if (titleEl && titleEl.childNodes[0]) titleEl.childNodes[0].textContent = (summaryMode === 'MEDIA' ? 'Paid / Non-Paid Media — Channel × Region ' : 'Marketing OPEX — Channel × Region ');
   try {
     if(!STATE.mktgRegion) STATE.mktgRegion='GLOBAL';
     if(!STATE.mktgVersion) STATE.mktgVersion='ACT';
@@ -2483,45 +2493,42 @@ function renderMarketingSummary(){
     cols.forEach((c,i)=> h += `<th class="num" style="background:#01323C;color:#fff;padding:8px 10px${i===cols.length-1?';border-left:2px solid #fff':''}">${c}</th>`);
     h += '</tr></thead><tbody>';
 
-    // Gross Revenue
-    const revS = series(d=>cellRev(d));
-    h += rowSeries('Gross Revenue', revS, {isRev:true, rowStyle:'background:#eef4ef', tdStyle:'font-weight:700;color:#01323C'});
+    if (summaryMode === 'MEDIA'){
+      // Gross Revenue (Sales by channel/region)
+      const revS = series(d=>cellRev(d));
+      h += rowSeries('Gross Revenue', revS, {isRev:true, rowStyle:'background:#eef4ef', tdStyle:'font-weight:700;color:#01323C'});
 
-    // Advertising group (collapsible)
-    const advS = series(d=>cellRecs(adRecs,d));
-    const open = STATE.mktgAdvOpen !== false;
-    h += rowSeries((open?'▾':'▸')+' Advertising', advS, {rowStyle:'background:#eaf1f5', tdStyle:'font-weight:700;color:#01323C', cellStyle:'font-weight:700', onclick:'toggleMktgAdv()'});
-    if (open){
-      adRecs.slice().sort((a,b)=>a.reporting_account.localeCompare(b.reporting_account)).forEach(rec=>{
-        const ser = series(d=>cellRecs([rec],d));
-        h += rowSeries(rec.reporting_account+' — '+(rec.account_name||''), ser, {tdStyle:'padding-left:26px;color:#555;border-left:3px solid #cfdbe2', cellStyle:'color:#555'});
+      // Advertising group (collapsible)
+      const advS = series(d=>cellRecs(adRecs,d));
+      const open = STATE.mktgAdvOpen !== false;
+      h += rowSeries((open?'▾':'▸')+' Advertising', advS, {rowStyle:'background:#eaf1f5', tdStyle:'font-weight:700;color:#01323C', cellStyle:'font-weight:700', onclick:'toggleMktgAdv()'});
+      if (open){
+        adRecs.slice().sort((a,b)=>a.reporting_account.localeCompare(b.reporting_account)).forEach(rec=>{
+          const ser = series(d=>cellRecs([rec],d));
+          h += rowSeries(rec.reporting_account+' — '+(rec.account_name||''), ser, {tdStyle:'padding-left:26px;color:#555;border-left:3px solid #cfdbe2', cellStyle:'color:#555'});
+        });
+      }
+
+      // Advertising % of Revenue — emphasised
+      let pr = '<tr style="background:#dde9ef;border-top:1px solid #b9cdd7;border-bottom:1px solid #b9cdd7"><td style="text-align:left;font-weight:800;color:#01323C">Advertising % of Revenue</td>';
+      advS.forEach((ac,i)=>{
+        const rc = revS[i]; let txt='—';
+        if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = fmtPct(ap-fp); }
+        else { const a = ver==='ACT'?ac.act:ac.fc, r = ver==='ACT'?rc.act:rc.fc; txt = (r&&Math.abs(r)>0.5) ? fmtPct(a/r) : '—'; }
+        pr += `<td class="num" style="background:${colBg(i)};font-weight:800;color:#01323C">${txt}</td>`;
       });
+      pr += '</tr>'; h += pr;
+    } else {
+      // OPEX categories (advertising excluded by tab scope)
+      let opexTotS = cols.map(()=>({act:0,fc:0}));
+      cats.forEach(cat=>{
+        const recs = opexRecs.filter(a=>a.category===cat);
+        const ser = series(d=>cellRecs(recs,d));
+        ser.forEach((c,i)=>{ opexTotS[i].act+=c.act; opexTotS[i].fc+=c.fc; });
+        h += rowSeries(cat, ser, {});
+      });
+      h += rowSeries('Total OPEX', opexTotS, {rowStyle:'background:#cfdde4;border-top:2px solid #01323C', tdStyle:'font-weight:800;color:#01323C', cellStyle:'font-weight:800'});
     }
-
-    // Advertising % of Revenue — emphasised
-    let pr = '<tr style="background:#dde9ef;border-top:1px solid #b9cdd7;border-bottom:1px solid #b9cdd7"><td style="text-align:left;font-weight:800;color:#01323C">Advertising % of Revenue</td>';
-    advS.forEach((ac,i)=>{
-      const rc = revS[i]; let txt='—';
-      if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = fmtPct(ap-fp); }
-      else { const a = ver==='ACT'?ac.act:ac.fc, r = ver==='ACT'?rc.act:rc.fc; txt = (r&&Math.abs(r)>0.5) ? fmtPct(a/r) : '—'; }
-      pr += `<td class="num" style="background:${colBg(i)};font-weight:800;color:#01323C">${txt}</td>`;
-    });
-    pr += '</tr>'; h += pr;
-
-    // spacer
-    h += '<tr><td colspan="'+(cols.length+1)+'" style="height:10px;border:0;background:#fff"></td></tr>';
-
-    // OPEX categories
-    let opexTotS = cols.map(()=>({act:0,fc:0}));
-    cats.forEach((cat,ci)=>{
-      const recs = opexRecs.filter(a=>a.category===cat);
-      const ser = series(d=>cellRecs(recs,d));
-      ser.forEach((c,i)=>{ opexTotS[i].act+=c.act; opexTotS[i].fc+=c.fc; });
-      h += rowSeries(cat, ser, {});
-    });
-    h += rowSeries('Total OPEX', opexTotS, {rowStyle:'background:#eaf1f5', tdStyle:'font-weight:700;color:#01323C', cellStyle:'font-weight:700'});
-    const totMktS = opexTotS.map((c,i)=>({act:c.act+advS[i].act, fc:c.fc+advS[i].fc}));
-    h += rowSeries('Total Marketing', totMktS, {rowStyle:'background:#cfdde4;border-top:2px solid #01323C', tdStyle:'font-weight:800;color:#01323C', cellStyle:'font-weight:800'});
 
     h += '</tbody></table></div>';
     wrap.innerHTML = h;
@@ -3513,7 +3520,7 @@ function expansionHTML(a){
         <th class="amt">vs ${labelOf(STATE.cmpA)}</th>
       </tr></thead>
       <tbody>
-        ${recon.slice(0, 20).map(r => {
+        ${recon.slice(0, 200).map(r => {
           const vs = r.ac - r.fA;
           const cls = (r.status === 'matched') ? favClass(r.ac, r.fA, isRev) :
                       (r.status === 'unmatched-fc') ? '' : 'unfav';
@@ -3529,7 +3536,7 @@ function expansionHTML(a){
           </tr>`;
         }).join('')}
       </tbody>
-    </table>${recon.length > 20 ? `<div style="font-size:10.5px; color:var(--gray); padding:6px 12px">+ ${recon.length - 20} more lines not shown</div>` : ''}` : '<div class="empty-state">No forecast or actuals activity in this period.</div>'}
+    </table>${recon.length > 200 ? `<div style="font-size:10.5px; color:var(--gray); padding:6px 12px">+ ${recon.length - 200} more lines not shown</div>` : ''}` : '<div class="empty-state">No forecast or actuals activity in this period.</div>'}
   </div>`;
 
   const cm = a.actuals_by_company[STATE.fy] || {};

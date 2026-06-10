@@ -2,10 +2,19 @@
   "tabs": [
     {
       "slug": "marketing",
-      "name": "Marketing",
+      "name": "OPEX",
       "owner": "Marketing",
       "depts": "75",
       "breakdown": "company"
+    },
+    {
+      "slug": "media",
+      "name": "Paid / Non-Paid Media",
+      "owner": "Marketing",
+      "depts": "75",
+      "breakdown": "company",
+      "virtual": true,
+      "dataSlug": "marketing"
     }
   ]
 }

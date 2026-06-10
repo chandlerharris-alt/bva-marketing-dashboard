@@ -20,6 +20,15 @@
       { "id": "uk",        "label": "UK",        "filter": { "companies": [40] } },
       { "id": "emea",      "label": "EMEA",      "filter": { "companies": [41] } },
       { "id": "china",     "label": "China",     "filter": { "companies": [65] } }
+    ],
+    "media": [
+      { "id": "us",        "label": "US",        "filter": { "companies": [11, 14, 74, 86, 16, 13, 1711, 5533, 2920, 3032] } },
+      { "id": "canada",    "label": "Canada",    "filter": { "companies": [20, 70] } },
+      { "id": "mexico",    "label": "Mexico",    "filter": { "companies": [33, 168] } },
+      { "id": "australia", "label": "Australia", "filter": { "companies": [30, 32] } },
+      { "id": "uk",        "label": "UK",        "filter": { "companies": [40] } },
+      { "id": "emea",      "label": "EMEA",      "filter": { "companies": [41] } },
+      { "id": "china",     "label": "China",     "filter": { "companies": [65] } }
     ]
   },
 
