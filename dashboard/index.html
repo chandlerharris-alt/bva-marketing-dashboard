@@ -1938,15 +1938,16 @@ function render(){
   const isWarehouseMatrixTab = ACTIVE_SLUG === 'total-warehousing';
   const isMarginFromSalesTab = ACTIVE_SLUG === 'margin-from-sales';
   const isMarketingSummary = (ACTIVE_SLUG === 'marketing' || ACTIVE_SLUG === 'media') && !STATE.subSection;
+  const isMediaRegion = ACTIVE_SLUG === 'media' && !!STATE.subSection;  // region tab: rollup matrix + drilldown grid
   document.getElementById('dept-rollup-card').style.display = 'none';
   document.getElementById('company-rollup-card').style.display = 'none';
-  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarketingSummary) ? '' : 'none';
+  document.getElementById('matrix-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarketingSummary || isMediaRegion) ? '' : 'none';
   // Hide the BvA grid when on the Margin from Sales tab (that tab shows the margin card as primary content)
   document.getElementById('bva-card').style.display = (isFreightTab || isWarehouseMatrixTab || isMarginFromSalesTab || isMarketingSummary) ? 'none' : '';
   if (isFreightTab) renderChannelMatrix();
   else if (isWarehouseMatrixTab) renderWarehouseMatrix();
-  else if (isMarketingSummary) renderMarketingSummary();
-  else if (!isMarginFromSalesTab) renderTable();
+  else if (isMarketingSummary || isMediaRegion) renderMarketingSummary();
+  if (isMediaRegion || (!isFreightTab && !isWarehouseMatrixTab && !isMarginFromSalesTab && !isMarketingSummary)) renderTable();
   if (typeof updateBvaCatSaveBar === 'function') updateBvaCatSaveBar();
 
   // Monthly breakdown card — shown when view spans multiple months (skip on special tabs)
@@ -2108,10 +2109,11 @@ function forecastMonthlyChannelRegion(rec, channel, region, versionKey){
   return monthly;
 }
 
-// Revenue account: base Equipment Gross Sales account only (4500000 exact).
-// Narrowed from the previous 4500* prefix to eliminate deductions, interco, etc.
+// Gross revenue accounts: equipment (4500000) + subscription straight from the GL
+// (4500777 Subscription Revenue, 4500774 Subscription Revenue DTC, 4500123 iFIT App Revenue).
+const GROSS_REV_ACCTS = new Set(['4500000','4500777','4500774','4500123']);
 function isRevenueAccount(ra){
-  return ra === '4500000';
+  return GROSS_REV_ACCTS.has(String(ra));
 }
 
 // All revenue account records from DATA.accounts
@@ -2423,14 +2425,20 @@ function renderMarketingSummary(){
   const wrap = document.getElementById('matrix-wrap');
   const titleEl = document.getElementById('matrix-card-title');
   const summaryMode = (ACTIVE_SLUG === 'media') ? 'MEDIA' : 'OPEX';
-  if (titleEl && titleEl.childNodes[0]) titleEl.childNodes[0].textContent = (summaryMode === 'MEDIA' ? 'Paid / Non-Paid Media — Channel × Region ' : 'Marketing OPEX — Channel × Region ');
+  const onRegionTab = (ACTIVE_SLUG === 'media' && !!STATE.subSection);  // media region: scope via sub-section, hide region toggle
+  if (titleEl && titleEl.childNodes[0]) titleEl.childNodes[0].textContent = onRegionTab
+    ? ('Paid / Non-Paid Media — ' + (STATE.subSection.label || '') + ' (by channel) ')
+    : (summaryMode === 'MEDIA' ? 'Paid / Non-Paid Media — Channel × Region ' : 'Marketing OPEX — Channel × Region ');
   try {
     if(!STATE.mktgRegion) STATE.mktgRegion='GLOBAL';
     if(!STATE.mktgVersion) STATE.mktgVersion='ACT';
     const fy = STATE.fy;
     const win = rollupWindow();
     const sumWin = arr => { let t=0; for(let i=win[0];i<=win[1];i++) t+=(arr[i-1]||0); return t; };
-    const regions = MKTG_REGION_SCOPES[STATE.mktgRegion] || REGION_ORDER;
+    let regions = MKTG_REGION_SCOPES[STATE.mktgRegion] || REGION_ORDER;
+    if (onRegionTab && STATE.subSection.filter && STATE.subSection.filter.companies){
+      regions = [...new Set(STATE.subSection.filter.companies.map(co => regionForCompany(co)))];
+    }
     const disp = MKTG_DISPLAY_CHANNELS;
     const raws = mktgRawChannels();
     const rawByDisp = {}; disp.forEach(d=> rawByDisp[d]=raws.filter(r=>mktgNormChannel(r)===d));
@@ -2457,9 +2465,12 @@ function renderMarketingSummary(){
     const aOff='padding:3px 9px;margin:0 4px 4px 0;border:1px solid #d0d5db;border-radius:5px;background:#fff;cursor:pointer;font-size:11px';
     const aOn ='padding:3px 9px;margin:0 4px 4px 0;border:1px solid #01323C;border-radius:5px;background:#01323C;color:#fff;cursor:pointer;font-size:11px';
     let h = '<div style="padding:10px 12px;display:flex;gap:22px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #eee">';
-    h += '<div><span style="font-size:10px;color:#888;letter-spacing:.5px;margin-right:8px">REGION</span>';
-    MKTG_REGION_BTNS.forEach(([k,lbl])=> h+=`<button onclick="setMktgRegion('${k}')" style="${STATE.mktgRegion===k?aOn:aOff}">${lbl}</button>`);
-    h += '</div><div><span style="font-size:10px;color:#888;letter-spacing:.5px;margin-right:8px">VIEW</span>';
+    if (!onRegionTab){
+      h += '<div><span style="font-size:10px;color:#888;letter-spacing:.5px;margin-right:8px">REGION</span>';
+      MKTG_REGION_BTNS.forEach(([k,lbl])=> h+=`<button onclick="setMktgRegion('${k}')" style="${STATE.mktgRegion===k?aOn:aOff}">${lbl}</button>`);
+      h += '</div>';
+    }
+    h += '<div><span style="font-size:10px;color:#888;letter-spacing:.5px;margin-right:8px">VIEW</span>';
     [['ACT','Actual'],['FC','8+4 Final'],['DELTA','Δ Act−Fcst']].forEach(([k,lbl])=> h+=`<button onclick="setMktgVersion('${k}')" style="${STATE.mktgVersion===k?aOn:aOff}">${lbl}</button>`);
     h += '</div></div>';
 
