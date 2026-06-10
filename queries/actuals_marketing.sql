@@ -47,7 +47,8 @@ SELECT
     COUNT(*)                         AS row_count
 FROM ANALYTICS.ANALYTICS_ADAPTIVE.GLOBAL_COMBINED_GL
 WHERE ( DEPT_NUMBER IN ({depts_csv})
-        OR REPORTING_ACCOUNT IN ({ad_accounts_csv}) )
+        OR REPORTING_ACCOUNT IN ({ad_accounts_csv})
+        OR REPORTING_ACCOUNT LIKE '4500%' )   -- gross revenue, for the Advertising % of Revenue line
   AND FISCAL_YEAR  BETWEEN {fy_min} AND {fy_max}
   AND FISCAL_MONTH BETWEEN 1 AND 12
   AND REPORTING_ACCOUNT IS NOT NULL
