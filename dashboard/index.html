@@ -605,14 +605,7 @@ tr:hover .fc-del-icon{opacity:1}
       <div>Overview</div>
       <div class="owner">All Marketing</div>
     </div>
-    <div class="sb-tab" id="sb-contacts-tab" data-slug="contacts" onclick="loadContacts()">
-      <div>Contacts</div>
-      <div class="owner">Volume · FCR · CPC</div>
-    </div>
-    <div class="sb-tab" id="sb-calendar-tab" data-slug="calendar" onclick="loadCalendar()">
-      <div>Calendar</div>
-      <div class="owner">Close · MPF · Forecasts</div>
-    </div>
+    <!-- Contacts + Calendar tabs were Member Care-only and have been removed for Marketing. -->
   </div>
   <!-- Admin section (hidden unless current user has role=admin) -->
   <div id="sb-admin-wrap" style="display:none; margin-top:12px">
@@ -5768,7 +5761,7 @@ function loadOverview(){
   // maxFy here meant Overview pulled FY27 (June FM01 has minimal actuals) while
   // BvA used FY26 (the day-15 close window) — comments saved in one tab were
   // invisible in the other.
-  if (OV_COST_DATA && OV_CONTACTS){
+  if (OV_COST_DATA){
     const ovFy = STATE.fy || Math.max(...(OV_COST_DATA?.meta?.fy_in_actuals||[2027]));
     VARIANCE_COMMENTS.loaded = false;
     loadVarianceComments(ovFy).then(()=> renderOverview()).catch(()=> renderOverview());
@@ -5778,7 +5771,6 @@ function loadOverview(){
 
   Promise.all([
     OV_COST_DATA ? Promise.resolve() : fetch('../data/marketing.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{ OV_COST_DATA=d; applyPrepaidToForecasts_OV(d); }),
-    OV_CONTACTS ? Promise.resolve() : fetch('../data/contacts.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{ OV_CONTACTS=d; }),
   ]).then(()=>{
     const ovFy = STATE.fy || Math.max(...(OV_COST_DATA?.meta?.fy_in_actuals||[2027]));
     loadVarianceComments(ovFy).then(()=> renderOverview()).catch(()=> renderOverview());
