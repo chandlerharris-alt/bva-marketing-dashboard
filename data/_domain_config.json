@@ -1,0 +1,33 @@
+{
+  "_comment": "Marketing BvA dashboard config. Scope = Dept 75 (all accounts) UNION Advertising accounts (any dept). Built 2026-06-09 by Claude Code for Chandler Harris. Sub-sections are regions; the top-level Marketing tab (no sub-section) renders the Channel x Region Summary matrix (Excel 'Total Marketing Spend Review' replica).",
+
+  "brand_label": "Marketing",
+
+  "account_routing": {
+    "_comment": "Include all marketing spend (OPEX + advertising) per Chandler. margin_prefixes pushes Revenue/COGS OUT of the per-region expense BvA grid (revenue is shown separately as the % -of-revenue denominator on the Summary matrix). exclude_categories hides the Revenue line from the expense grid only.",
+    "exclude_accounts": [],
+    "exclude_categories": ["Revenue"],
+    "margin_prefixes": ["45", "46", "47", "55"],
+    "category_overrides": {}
+  },
+
+  "section_children": {
+    "marketing": [
+      { "id": "us",        "label": "US",        "filter": { "companies": [11, 14, 74, 86, 16, 13, 1711, 5533, 2920, 3032] } },
+      { "id": "canada",    "label": "Canada",    "filter": { "companies": [20, 70] } },
+      { "id": "mexico",    "label": "Mexico",    "filter": { "companies": [33, 168] } },
+      { "id": "australia", "label": "Australia", "filter": { "companies": [30, 32] } },
+      { "id": "uk",        "label": "UK",        "filter": { "companies": [40] } },
+      { "id": "emea",      "label": "EMEA",      "filter": { "companies": [41] } },
+      { "id": "china",     "label": "China",     "filter": { "companies": [65] } }
+    ]
+  },
+
+  "direct_reports": [
+    { "name": "Marketing", "slug": "marketing", "label": "Marketing (dept 075 + advertising, all depts)" }
+  ],
+
+  "direct_report_lead": null,
+
+  "implicit_dept_scope": {}
+}
