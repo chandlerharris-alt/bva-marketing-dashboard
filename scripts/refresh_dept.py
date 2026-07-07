@@ -252,6 +252,9 @@ def main():
                     help="SQL template for the ADAPTIVE_PLANNING_GENERAL forecast. Default "
                          "'forecast_planning_general.sql'. Marketing uses 'forecast_planning_general_marketing.sql' "
                          "so advertising FORECAST from any dept is captured (matches the 8+4 in the Excel).")
+    ap.add_argument("--load-gl-pl-revenue", action="store_true",
+                    help="Also load ADAPTIVE_GL_PL_ACTUALS recognized revenue (USD, correct channel taxonomy incl "
+                         "subscription) into meta.rev_gl_pl — used for the Media tab Gross Revenue + share-of-revenue.")
     args = ap.parse_args()
 
     dept_nums = [int(d.strip()) for d in args.depts.split(",") if d.strip()]
@@ -343,6 +346,12 @@ def main():
         # Print discovered versions so caller can review mapping
         rft_versions = sorted({r["version"] for r in rft_rows if r.get("version")})
         print(f"  RPT versions discovered: {rft_versions}")
+
+    # ADAPTIVE_GL_PL_ACTUALS recognized revenue (USD, incl subscription channels)
+    gl_pl_rev: list[dict] = []
+    if getattr(args, "load_gl_pl_revenue", False):
+        gl_pl_rev = fetch(cur, load_sql("revenue_gl_pl.sql").format(fy_min=args.fy_min, fy_max=args.fy_max),
+                          "GL_PL revenue (ADAPTIVE_GL_PL_ACTUALS)")
 
     cur.close()
     conn.close()
@@ -825,6 +834,25 @@ def main():
         pri.setdefault("drill", []).extend(dup.get("drill", []))
         print(f"  [dedup] merged duplicate RA '{dup['reporting_account']}' into primary")
 
+    # ---------- GL_PL recognized revenue → rev_gl_pl[displayChannel][company][fy] = [12] (USD) ----------
+    GLPL_CH = {'WHSL':'Wholesale','WHOLESALE':'Wholesale','DTC':'DTC','FM':'Freemotion','FREEMOTION':'Freemotion',
+               'IFIT - CORE':'iFIT - Core','IFIT-CORE':'iFIT - Core','IFIT - APP':'iFIT - App','IFIT-APP':'iFIT - App',
+               'CORP/OTHER':'Corp/Other'}
+    def glpl_norm(ch):
+        return GLPL_CH.get((ch or "").strip().upper(), 'Corp/Other')
+    rev_gl_pl: dict = {}
+    for r in gl_pl_rev:
+        try:
+            fy = int(r["fy"]); fm = int(r["fm"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if fm < 1 or fm > 12:
+            continue
+        ch = glpl_norm(r.get("channel"))
+        co = str(r.get("company"))
+        amt = float(r.get("amount") or 0.0)
+        rev_gl_pl.setdefault(ch, {}).setdefault(co, {}).setdefault(str(fy), [0.0]*12)[fm-1] += amt
+
     # ---------- Output ----------
     fy_in_actuals = sorted({fy for rec in accounts.values() for fy in rec["actuals"].keys()})
     out = {
@@ -850,6 +878,7 @@ def main():
                 "1711":"USD","2920":"USD","3032":"USD","5533":"USD",
             },
             "source_company_map": SOURCE_COMPANY_MAP,
+            "rev_gl_pl": rev_gl_pl,
         },
         "accounts": [
             {

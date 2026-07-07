@@ -37,6 +37,7 @@ TABS = [
         "planning_sql": "forecast_planning_general_marketing.sql",
         "advertising_accounts": ADVERTISING_ACCOUNTS,
         "load_revenue_forecast": True,
+        "load_gl_pl_revenue": True,
     },
 ]
 
@@ -64,6 +65,7 @@ def run():
         if t.get("planning_sql"):          cmd += ["--planning-sql", t["planning_sql"]]
         if t.get("advertising_accounts"):  cmd += ["--advertising-accounts", t["advertising_accounts"]]
         if t.get("load_revenue_forecast"): cmd += ["--load-revenue-forecast"]
+        if t.get("load_gl_pl_revenue"):    cmd += ["--load-gl-pl-revenue"]
         print("\n>", " ".join(cmd))
         # Ensure the project root is importable in the child (so `from config...` works
         # regardless of where the script's own dir lands on sys.path).
