@@ -35,10 +35,11 @@ Snowflake → `scripts/refresh_all.py`→`refresh_dept.py` → `data/marketing.j
 
 ## Validated tie-outs (May FY26 / FM12, vs Excel)
 - Advertising (global) ties ~93–96%. OPEX categories tie (Excel "Total OPEX" was double-counting — resolved). Data/tie-out reference: `data/_tieout_may26.json`, checker `scripts/validate_tieout.py`.
+- **Media Gross Revenue ACTUAL + PY (DONE):** sourced from `ADAPTIVE_GL_PL_ACTUALS` → `meta.rev_gl_pl`. FY26 May global by channel (USD, gross): Wholesale $23.7M, DTC $20.3M, iFIT-Core $15.2M, Freemotion $8.9M, Corp/Other $0.5M, iFIT-App $0. Americas subset ties to Excel within unclosed-May tolerance.
 
 ## OPEN ITEMS
-1. **Media revenue tie-out (IN PROGRESS):** GL revenue doesn't match the Adaptive Excel by channel/region; 8+4/AOP forecast lacked subscription. Chandler pointed to **`ADAPTIVE_GL_PL_ACTUALS`** for ACTUALS at the right dimensions. Wire revenue from there (+ figure region/channel dims). Subscription-forecast source still TBD.
+1. **Subscription-forecast gap (remaining piece of the revenue work):** Media Gross Revenue **Actual + PY** now correct (from `meta.rev_gl_pl`, USD, incl subscription — see refresh_dept.py `--load-gl-pl-revenue`, `queries/revenue_gl_pl.sql`, and the `glplRev()` block in `buildMediaGrid`). BUT the **AOP/8+4 forecast** revenue columns still come from `RPT_FORECAST_DETAIL`, which is **hardware-only** — so forecast revenue understates actuals by the subscription amount and the Gross-Revenue 8+4/AOP variances read artificially negative. Need a subscription FORECAST source (RPT is hardware-only; ADAPTIVE_GL_PL_ACTUALS is actuals-only). Flag to Chandler; candidate = an Adaptive planning version cube for revenue by channel.
 2. **Cloudflare Access login gate NOT set up** → `/api/*` returns 401 → "Save Categories authentication failing" (categories are browser-local only, won't persist for others). Zero Trust → Access → self-hosted app on the pages.dev host, policy: emails ending @ifit.com. This is the last infra step + makes sharing safe.
 3. Marketing dept-head name/email still placeholder ("Marketing") in access.json/manifest/_domain_config.
 
-## Git: latest commit `252e582` (drill collapse). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
+## Git: latest commit `f04b468` (Media revenue from rev_gl_pl). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
