@@ -3121,6 +3121,31 @@ function buildMediaGrid(){
   const acctV = a => [rollup(getActuals(a)), rollup(effectiveSeries(a,STATE.cmpA)), rollup(effectiveSeries(a,STATE.cmpB)), rollup(getSeries(a,STATE.cmpPY))];
   const rev = sumV(revAccts), paid = sumV(paidAccts), nonpaid = sumV(nonpaidAccts);
   const totAdv = {actual:paid.actual+nonpaid.actual, a:paid.a+nonpaid.a, b:paid.b+nonpaid.b, py:paid.py+nonpaid.py};
+  // Gross Revenue Actual + PY come from ADAPTIVE_GL_PL_ACTUALS (recognized, USD, incl subscription) —
+  // this is the Excel's source and avoids the FX/deferred-subscription issues of the raw GL accounts.
+  // (AOP/8+4 forecast revenue stays on RPT — that table is hardware-only; subscription forecast is still a gap.)
+  {
+    const RGP = (DATA.meta && DATA.meta.rev_gl_pl) || {};
+    if (Object.keys(RGP).length){
+      const selDisp = MKTG_DISPLAY_CHANNELS.filter(d => {
+        if (!STATE.selectedChannels) return true;
+        const raws = mktgRawChannels().filter(r => mktgNormChannel(r) === d);
+        return raws.length ? raws.every(r => STATE.selectedChannels.has(r)) : true;
+      });
+      const effCo = effectiveCompanySet();
+      const glplRev = fy => {
+        let t = 0;
+        selDisp.forEach(d => { const byCo = RGP[d] || {}; Object.entries(byCo).forEach(([co, byFy]) => {
+          if (effCo && !effCo.has(String(co))) return;
+          const arr = byFy[String(fy)]; if (arr) t += rollup(arr);
+        }); });
+        return t;
+      };
+      rev.actual = glplRev(STATE.fy);
+      const _pyY = String(STATE.cmpPY||'').startsWith('ACTUALS_FY') ? +String(STATE.cmpPY).slice(10) : (STATE.fy - 1);
+      rev.py = glplRev(_pyY);
+    }
+  }
 
   const rows = [];
   rows.push(`<table class="bva"><thead>`);
