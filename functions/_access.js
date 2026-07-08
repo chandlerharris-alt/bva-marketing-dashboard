@@ -37,11 +37,11 @@ export async function getAccess(context, email){
 
 export function isAdmin(entry){ return !!(entry && entry.admin); }
 export function tabCaps(entry, slug){
-  if (entry && entry.admin) return { view:true, tag:true, comment:true, forecast:true };
+  if (entry && entry.admin) return { view:true, tag:true, comment:true, forecast:true, insight:true };
   const t = (entry && entry.tabs) || {};
   return Object.assign({}, t['*'] || {}, t[slug] || {});
 }
-// cap = 'view' | 'tag' | 'comment' | 'forecast'
+// cap = 'view' | 'tag' | 'comment' | 'forecast' | 'insight'
 export function can(entry, slug, cap){ return (entry && entry.admin === true) || !!tabCaps(entry, slug)[cap]; }
 export function canSee(entry, slug){
   const c = tabCaps(entry, slug);

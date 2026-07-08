@@ -37,7 +37,7 @@ function normalizeEntry(entry){
     return { admin: !!entry.admin, tabs: entry.tabs || {}, versions: entry.versions || '*' };
   }
   const role = entry.role || 'denied';
-  if (role === 'admin') return { admin:true, tabs:{ '*':{view:true,tag:true,comment:true,forecast:true} }, versions:'*' };
+  if (role === 'admin') return { admin:true, tabs:{ '*':{view:true,tag:true,comment:true,forecast:true,insight:true} }, versions:'*' };
   const caps = role === 'editor' ? {view:true,tag:true,comment:true,forecast:true}
              : role === 'viewer' ? {view:true} : null;
   if (!caps) return { admin:false, tabs:{}, versions:'*' };

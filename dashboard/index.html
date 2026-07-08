@@ -483,6 +483,14 @@ tr:hover .fc-del-icon{opacity:1}
 .btn-hygiene{padding:3px 9px;font-size:10px;border:1px solid var(--border);background:#fff;color:var(--navy);border-radius:4px;cursor:pointer;white-space:nowrap}
 .btn-hygiene:hover{background:#f0f4ff}
 .hygiene-no-data{color:var(--gray);font-size:12px;padding:10px 0;font-style:italic}
+/* Insight card */
+.insight-card{background:#fafffc;border:1px solid var(--border);border-left:3px solid var(--green);border-radius:6px;margin-top:14px}
+.insight-card .card-h{padding:10px 16px;font-size:13px;font-weight:600;color:var(--navy)}
+.insight-card ul{margin:0;padding-left:18px}
+.insight-card li{font-size:12.5px;color:var(--navy);line-height:1.6;margin-bottom:4px}
+.insight-meta-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--gray)}
+.insight-empty{color:var(--gray);font-size:12px;font-style:italic}
+.insight-error{color:var(--red);font-size:12px}
 /* Save button in topbar */
 .topbar-save{background:#10b981;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;margin-right:10px;display:flex;align-items:center;gap:6px}
 .topbar-save:disabled{background:#9ca3af;cursor:not-allowed}
@@ -769,6 +777,14 @@ tr:hover .fc-del-icon{opacity:1}
         <button class="var-save-btn" id="bva-cat-save-btn" onclick="saveBvaCatComments()">Save Comments</button>
         <span class="var-save-status" id="bva-cat-save-status"></span>
       </div>
+    </div>
+
+    <div class="insight-card" id="insight-card" style="display:none">
+      <div class="card-h" style="display:flex;align-items:center;gap:8px">
+        &#128161; Insight <span class="meta" id="insight-period-label" style="margin-left:2px"></span>
+        <button class="btn-hygiene" id="insight-generate-btn" style="display:none;margin-left:auto" onclick="generateInsight()">Generate Insight</button>
+      </div>
+      <div id="insight-card-body" style="padding:10px 16px 14px"></div>
     </div>
 
     <div class="hygiene-card" id="hygiene-card" style="display:none">
@@ -2056,6 +2072,7 @@ function render(){
 
   renderCharts();
   if (typeof updateHygieneCard === 'function') updateHygieneCard();
+  if (typeof updateInsightCard === 'function') updateInsightCard();
   if (typeof updateUntaggedBanner === 'function') updateUntaggedBanner();
   if (typeof renderBvaVariances === 'function') renderBvaVariances();
 }
@@ -6922,6 +6939,178 @@ function updateHygieneCard(){
   body.innerHTML = html;
 }
 
+// ===== Insight payload (client-assembled context sent to /api/generate-insight) =====
+// Scrapes the ALREADY-RENDERED grid rather than recomputing $ figures a second time — the grid
+// already handles FX conversion, channel pro-rating, and revenue overrides (e.g. FY27 AOP), so
+// scraping guarantees the numbers we hand the model exactly match what's on screen.
+function scrapeGridRows(){
+  const wrap = document.getElementById('bva-wrap');
+  if (!wrap) return [];
+  const parseUSD = txt => {
+    if (!txt) return null;
+    const cleaned = String(txt).replace(/[^0-9.\-]/g, '');
+    if (!cleaned || cleaned === '-') return null;
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? null : num;
+  };
+  return Array.from(wrap.querySelectorAll('tr.cat-row, tr.subtotal')).map(tr => {
+    const tds = tr.querySelectorAll('td');
+    if (tds.length < 4) return null;
+    const label = tds[0].textContent.replace(/\u{1F4AC}/gu, '').replace(/\s+/g, ' ').trim();
+    const py = parseUSD(tds[1].textContent), plan = parseUSD(tds[2].textContent), actual = parseUSD(tds[3].textContent);
+    if (py == null && plan == null && actual == null) return null;
+    return { label, isTotal: tr.classList.contains('subtotal'), py, plan, actual };
+  }).filter(Boolean);
+}
+
+function currentPeriodLabel(){
+  const fy = STATE.fy || 2026, fm = STATE.month || 12;
+  if (STATE.view === 'FY') return `FY${fy-2000} (full year)`;
+  if (STATE.view === 'YTD') return `FY${fy-2000} YTD through ${FM_LABELS[fm-1]}`;
+  if (STATE.view === 'QTD') return `FY${fy-2000} QTD through ${FM_LABELS[fm-1]}`;
+  return `${FM_LABELS[fm-1]} FY${fy-2000}`;
+}
+
+function buildInsightPayload(){
+  const rows = scrapeGridRows();
+  const revRow = rows.find(r => /gross revenue/i.test(r.label));
+  const grandTotal = [...rows].reverse().find(r => r.isTotal);
+  const categories = rows
+    .filter(r => !r.isTotal && r !== revRow)
+    .map(r => ({ label: r.label, py: r.py, plan: r.plan, actual: r.actual, varVsPlan: (r.actual||0)-(r.plan||0), varVsPY: (r.actual||0)-(r.py||0) }))
+    .sort((a,b) => Math.abs(b.varVsPlan) - Math.abs(a.varVsPlan))
+    .slice(0, 8);
+
+  const trimHygiene = (list, valueKey) => (list||[])
+    .slice().sort((a,b) => Math.abs(b[valueKey]||0) - Math.abs(a[valueKey]||0)).slice(0, 5);
+  let hygiene = null;
+  try {
+    const insights = computeInsightsFromData();
+    const fy = STATE.fy || 2026, fm = STATE.month || 12;
+    const monthKey = fy + '-' + String(fm).padStart(2,'0');
+    const md = insights?.by_month?.[monthKey];
+    if (md){
+      hygiene = {
+        likely_missing_accruals: trimHygiene(md.missing_actuals, 'avg_last_3'),
+        consider_adding_to_forecast: trimHygiene(md.missing_forecast, 'suggested_monthly'),
+        consider_removing_from_forecast: trimHygiene(md.phantom_forecast, 'avg_monthly'),
+        consider_reducing_forecast: trimHygiene(md.over_forecast, 'forecast_monthly'),
+      };
+    }
+  } catch(e){ hygiene = null; }
+
+  const tab = (MANIFEST?.tabs||[]).find(t => t.slug === ACTIVE_SLUG);
+  const tabName = (tab ? tab.name : ACTIVE_SLUG) + (STATE.subSection ? ' — ' + STATE.subSection.label : '');
+
+  return {
+    slug: ACTIVE_SLUG,
+    fy: STATE.fy,
+    fm: STATE.month || 12,
+    periodLabel: currentPeriodLabel(),
+    version: STATE.cmpA || null,
+    metrics: {
+      tab: tabName,
+      revenue: revRow ? { py: revRow.py, plan: revRow.plan, actual: revRow.actual } : null,
+      grand_total: grandTotal ? { label: grandTotal.label, py: grandTotal.py, plan: grandTotal.plan, actual: grandTotal.actual } : null,
+      top_categories_by_variance_vs_plan: categories,
+      hygiene,
+    },
+  };
+}
+
+// ===== Insight card: load saved narrative, generate a new one on demand =====
+// Cached per slug+FY (one GitHub file covers every month of that tab/FY — see
+// functions/api/generate-insight.js). 'loading' is a sentinel to prevent duplicate
+// in-flight fetches when render() fires updateInsightCard() multiple times in a row.
+let INSIGHT_STORE = {};
+function insightStoreKey(){ return ACTIVE_SLUG + '__FY' + (STATE.fy || 2026); }
+
+function updateInsightCard(){
+  const card = document.getElementById('insight-card');
+  if (!card) return;
+  if (!DATA || !DATA.accounts){ card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const key = insightStoreKey();
+  const btn = document.getElementById('insight-generate-btn');
+  if (btn){
+    btn.style.display = authCan(ACTIVE_SLUG, 'insight') ? '' : 'none';
+    if (!btn.disabled){
+      const fmKey = 'FM' + String(STATE.month || 12).padStart(2, '0');
+      const hasEntry = INSIGHT_STORE[key] && INSIGHT_STORE[key] !== 'loading' && INSIGHT_STORE[key].by_month && INSIGHT_STORE[key].by_month[fmKey];
+      btn.textContent = hasEntry ? 'Regenerate' : 'Generate Insight';
+    }
+  }
+
+  const lbl = document.getElementById('insight-period-label');
+  if (lbl) lbl.textContent = '— ' + currentPeriodLabel();
+
+  const body = document.getElementById('insight-card-body');
+  if (!body) return;
+
+  const cached = INSIGHT_STORE[key];
+  if (cached === undefined){
+    INSIGHT_STORE[key] = 'loading';
+    body.innerHTML = '<div class="insight-empty">Loading…</div>';
+    fetch(`/api/generate-insight?slug=${encodeURIComponent(ACTIVE_SLUG)}&fy=${STATE.fy || 2026}`, { credentials:'include' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(j => { INSIGHT_STORE[key] = j; updateInsightCard(); })
+      .catch(() => { INSIGHT_STORE[key] = { by_month:{}, _unavailable:true }; updateInsightCard(); });
+    return;
+  }
+  if (cached === 'loading') return;
+
+  const fmKey = 'FM' + String(STATE.month || 12).padStart(2, '0');
+  const entry = cached.by_month && cached.by_month[fmKey];
+  if (!entry){
+    body.innerHTML = cached._unavailable
+      ? '<div class="insight-empty">No saved insight yet (and this browser can\'t reach the insight service right now).</div>'
+      : '<div class="insight-empty">No insight generated yet for this period.</div>';
+    return;
+  }
+  const lines = String(entry.text || '').split('\n').map(l => l.replace(/^-\s*/, '').trim()).filter(Boolean);
+  const esc = s => String(s).replace(/</g, '&lt;');
+  const list = lines.length ? '<ul>' + lines.map(l => `<li>${esc(l)}</li>`).join('') + '</ul>' : '<div class="insight-empty">(empty)</div>';
+  const when = entry.generatedAt ? new Date(entry.generatedAt).toLocaleString() : '';
+  body.innerHTML = list + `<div class="insight-meta-row">Generated by ${esc(entry.generatedBy||'')} · ${esc(when)}${entry.version ? ' · ' + esc(labelOf(entry.version)) : ''}</div>`;
+}
+
+async function generateInsight(){
+  const btn = document.getElementById('insight-generate-btn');
+  const body = document.getElementById('insight-card-body');
+  if (btn){ btn.disabled = true; btn.textContent = 'Generating…'; }
+  let errMsg = null;
+  try {
+    const payload = buildInsightPayload();
+    const res = await fetch('/api/generate-insight', {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j.error){
+      errMsg = j.detail || j.error || ('HTTP ' + res.status);
+    } else {
+      const key = insightStoreKey();
+      const cached = (INSIGHT_STORE[key] && INSIGHT_STORE[key] !== 'loading') ? INSIGHT_STORE[key] : { by_month:{} };
+      const fmKey = 'FM' + String(payload.fm).padStart(2, '0');
+      cached.by_month = cached.by_month || {};
+      cached.by_month[fmKey] = j.entry;
+      INSIGHT_STORE[key] = cached;
+    }
+  } catch(e){
+    errMsg = e && e.message || String(e);
+  }
+  if (btn) btn.disabled = false;
+  if (errMsg && body){
+    body.innerHTML = `<div class="insight-error">Couldn't generate an insight (${esc_(errMsg)}).</div>`;
+    if (btn) btn.textContent = 'Generate Insight';
+  } else {
+    updateInsightCard();
+  }
+}
+function esc_(s){ return String(s).replace(/</g, '&lt;'); }
+
 function openFcRowModalFromHygiene(account, value, description){
   if (STATE.viewMode !== 'forecast') setViewMode('forecast');
   if (STATE.fcSubTab !== 'opex') setFcSubTab('opex');
@@ -9676,7 +9865,7 @@ function renderAdmin(access){
   });
 }
 function adminUserCardHtml(email, norm, tabs, allBase){
-  const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast']];
+  const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast'],['insight','Insight']];
   const esc = s => String(s).replace(/"/g,'&quot;');
   const tabRows = tabs.map(t => {
     const eff = (norm.tabs && norm.tabs[t.slug]) || {};
