@@ -782,6 +782,7 @@ def main():
             "source_company": int(r["source_company"]) if r.get("source_company") is not None else None,
             "vendor": r.get("vendor_name"), "customer": r.get("customer_name"),
             "invoice": r.get("invoice_number"), "comments": r.get("gl_comments"),
+            "channel": (r.get("channel") or "").strip() or None,   # for channel-filtered drill (media)
             "amount": r.get("amount") or 0.0,
         })
 

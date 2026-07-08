@@ -3660,18 +3660,33 @@ function expansionHTML(a){
     return true; // FY
   };
 
-  const actAgg = {};
+  // Channel filter — on Media, drilling with specific channels selected shows only those
+  // channels' transactions/balances (region/company already handled above). OPEX has no channel selector.
+  const _selRaw = (ACTIVE_SLUG === 'media' && STATE.selectedChannels) ? STATE.selectedChannels : null;
+  const _allRaw = (typeof mktgRawChannels === 'function') ? mktgRawChannels() : [];
+  const chFilterActive = _selRaw && _allRaw.length && _selRaw.size < _allRaw.length;
+  const selDisp = chFilterActive ? new Set(MKTG_DISPLAY_CHANNELS.filter(d => {
+    const raws = _allRaw.filter(r => mktgNormChannel(r) === d);
+    return raws.length && raws.every(r => _selRaw.has(r));
+  })) : null;
+  const chOk = (rowCh) => !selDisp || (rowCh != null && selDisp.has(mktgNormChannel(rowCh)));
+  const coOkDrill = (co) => ssCosSet ? ssCosSet.has(String(co)) : (!STATE.selectedCompanies || STATE.selectedCompanies.has(String(co)));
+
+  // Actuals for the current FY (actAgg) + same period prior FY (pyAgg), both company + channel filtered.
+  const actAgg = {}, pyAgg = {};
   (a.drill || []).forEach(d => {
-    if (d.fy !== STATE.fy) return;
-    const co = String(d.source_company);
-    // Drill rows don't carry dept_number — only filter by company here.
-    if (ssCosSet) { if (!ssCosSet.has(co)) return; }
-    else if (STATE.selectedCompanies && !STATE.selectedCompanies.has(co)) return;
+    if (!coOkDrill(d.source_company)) return;
+    if (!chOk(d.channel)) return;
     if (!inPeriod(d.fm)) return;
     const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
     const k = normKey(display) || 'unknown';
-    if (!actAgg[k]) actAgg[k] = {key:k, display, amount:0};
-    actAgg[k].amount += d.amount;
+    if (d.fy === STATE.fy){
+      if (!actAgg[k]) actAgg[k] = {key:k, display, amount:0};
+      actAgg[k].amount += d.amount;
+    } else if (d.fy === STATE.fy - 1){
+      if (!pyAgg[k]) pyAgg[k] = {key:k, display, amount:0};
+      pyAgg[k].amount += d.amount;
+    }
   });
 
   const fcAggA = {}, fcAggB = {};
@@ -3689,6 +3704,7 @@ function expansionHTML(a){
         const co = l.level_code ? String(parseInt(l.level_code, 10)) : '';
         if (!co || !ssCosSet.has(co)) return;
       }
+      if (!chOk(l.channel)) return;
       const display = l.description || l.vendor || 'Unspecified';
       const k = normKey(display) || 'unspecified';
       const target = (cmpVer === STATE.cmpA) ? fcAggA : fcAggB;
@@ -3697,14 +3713,15 @@ function expansionHTML(a){
     });
   });
 
-  const allKeys = new Set([...Object.keys(fcAggA), ...Object.keys(fcAggB), ...Object.keys(actAgg)]);
+  const allKeys = new Set([...Object.keys(fcAggA), ...Object.keys(fcAggB), ...Object.keys(actAgg), ...Object.keys(pyAgg)]);
   const recon = [];
   for (const k of allKeys){
-    const display = (fcAggA[k]?.display) || (fcAggB[k]?.display) || (actAgg[k]?.display) || k;
+    const display = (fcAggA[k]?.display) || (fcAggB[k]?.display) || (actAgg[k]?.display) || (pyAgg[k]?.display) || k;
     const fA = fcAggA[k]?.amount || 0;
     const fB = fcAggB[k]?.amount || 0;
     const ac = actAgg[k]?.amount || 0;
-    if (Math.abs(fA) + Math.abs(fB) + Math.abs(ac) < 0.5) continue;
+    const py = pyAgg[k]?.amount || 0;
+    if (Math.abs(fA) + Math.abs(fB) + Math.abs(ac) + Math.abs(py) < 0.5) continue;
     const inFc = Math.abs(fA) + Math.abs(fB) > 0.5;
     const inAc = Math.abs(ac) > 0.5;
     let status = 'matched';
@@ -3712,7 +3729,7 @@ function expansionHTML(a){
     else if (!inFc && inAc) status = 'unmatched-act';
     const expType = fcAggA[k]?.expense_type || fcAggB[k]?.expense_type || '';
     const isAmort = fcAggA[k]?._amortized || fcAggB[k]?._amortized || false;
-    recon.push({display, fA, fB, ac, status, expType, isAmort});
+    recon.push({display, fA, fB, ac, py, status, expType, isAmort});
   }
   recon.sort((x,y) => Math.max(Math.abs(y.fA), Math.abs(y.fB), Math.abs(y.ac))
                     - Math.max(Math.abs(x.fA), Math.abs(x.fB), Math.abs(x.ac)));
@@ -3732,31 +3749,30 @@ function expansionHTML(a){
   const catAgg = {};
   recon.forEach(r => {
     const b = bucketFor(r.display);
-    if (!catAgg[b.id]) catAgg[b.id] = { name: b.name, color: b.color, actual: 0, cmpA: 0, cmpB: 0, count: 0 };
+    if (!catAgg[b.id]) catAgg[b.id] = { name: b.name, color: b.color, actual: 0, cmpA: 0, py: 0, count: 0 };
     catAgg[b.id].actual += r.ac;
     catAgg[b.id].cmpA   += r.fA;
-    catAgg[b.id].cmpB   += r.fB;
+    catAgg[b.id].py     += r.py;
     catAgg[b.id].count  += 1;
   });
   const catRows2 = Object.values(catAgg).sort((x,y) => Math.max(Math.abs(y.actual),Math.abs(y.cmpA)) - Math.max(Math.abs(x.actual),Math.abs(x.cmpA)));
   const catSummaryHtml = catRows2.length > 0 ? `<div class="recon" style="margin-bottom:8px">
     <div class="recon-h">By Category <span class="meta">${catRows2.length} categor${catRows2.length===1?'y':'ies'}</span></div>
-    <table><thead><tr><th style="width:38%">Category</th><th class="amt">${labelOf(STATE.cmpA)}</th><th class="amt">${labelOf(STATE.cmpB)}</th><th class="amt">Actual</th><th class="amt">vs ${labelOf(STATE.cmpA)}</th></tr></thead><tbody>
+    <table><thead><tr><th style="width:40%">Category</th><th class="amt">PY</th><th class="amt">Plan</th><th class="amt">Actual</th><th class="amt">Δ vs Plan</th></tr></thead><tbody>
     ${catRows2.map(g => {
       const vs = g.actual - g.cmpA;
       const cls = Math.abs(g.actual)+Math.abs(g.cmpA)<0.5?'':favClass(g.actual,g.cmpA,isRev);
-      return `<tr><td><span class="uc-swatch" style="background:${g.color}"></span> ${g.name} <span class="uc-count">${g.count}</span></td><td class="amt">${fmtUSD(g.cmpA)}</td><td class="amt">${fmtUSD(g.cmpB)}</td><td class="amt"><strong>${fmtUSD(g.actual)}</strong></td><td class="amt ${cls}">${fmtUSD(vs)}</td></tr>`;
+      return `<tr><td><span class="uc-swatch" style="background:${g.color}"></span> ${g.name} <span class="uc-count">${g.count}</span></td><td class="amt">${fmtUSD(g.py)}</td><td class="amt">${fmtUSD(g.cmpA)}</td><td class="amt"><strong>${fmtUSD(g.actual)}</strong></td><td class="amt ${cls}">${fmtUSD(vs)}</td></tr>`;
     }).join('')}
     </tbody></table></div>` : '';
 
   const untaggedCount = (catAgg['__other__'] && catAgg['__other__'].count) || 0;
   const reconLinesInner = recon.length ? `<table>
       <thead><tr>
-        <th style="width:38%">Vendor / Description</th>
-        <th class="amt">${labelOf(STATE.cmpA)}</th>
-        <th class="amt">${labelOf(STATE.cmpB)}</th>
+        <th style="width:44%">Vendor / Description</th>
+        <th class="amt">Plan</th>
         <th class="amt">Actual</th>
-        <th class="amt">vs ${labelOf(STATE.cmpA)}</th>
+        <th class="amt">Δ vs Plan</th>
       </tr></thead>
       <tbody>
         ${recon.slice(0, 200).map(r => {
@@ -3769,7 +3785,6 @@ function expansionHTML(a){
           return `<tr class="${r.status}">
             <td>${r.display}${pillFor(r.status)}${typePill}${ucChipHtml(ACTIVE_SLUG, r.display, a.reporting_account)}</td>
             <td class="amt">${fmtUSD(r.fA)}</td>
-            <td class="amt">${fmtUSD(r.fB)}</td>
             <td class="amt"><strong>${fmtUSD(r.ac)}</strong></td>
             <td class="amt ${cls}">${r.status === 'unmatched-fc' ? '—' : fmtUSD(vs)}</td>
           </tr>`;
@@ -3806,9 +3821,7 @@ function expansionHTML(a){
       <span class="cat-badge">${a.category}</span>
       <span class="desc">Click row again to close</span>
     </div>
-    ${kpis}
     ${reconBlock}
-    ${coStrip}
   </div>`;
 }
 
@@ -4020,7 +4033,12 @@ function populateFcVersionSelect(){
   const sel = document.getElementById('fc-version-select');
   if (!sel) return;
   const fysByVer = fcDiscoverVersions();
-  const versionNames = Object.keys(fysByVer).filter(v => fysByVer[v].size > 0);
+  let versionNames = Object.keys(fysByVer).filter(v => fysByVer[v].size > 0);
+  // Apply the same version limiting as the Compare dropdowns: drop globally-hidden versions
+  // (Admin > Forecast Versions) and versions this user isn't allowed. "Working Forecast" is
+  // always kept — it's the editable draft, not a plan-comparison version.
+  const _visFc = versionNames.filter(v => v === 'Working Forecast' || (!VERSION_HIDDEN.has(baseVersion(v)) && authVersionAllowed(baseVersion(v))));
+  if (_visFc.length) versionNames = _visFc;
   const rank = v => {
     if (v === 'Working Forecast') return 0;
     if (/AOP/i.test(v) && !/Board|Cerberus/i.test(v)) return 1;
@@ -7071,7 +7089,9 @@ function renderOverview(){
   }
   const defaultThroughFm = (fy === clockFy) ? clockFm : (ovLastActualFm(fy) || 12);
 
-  const versions = (data.meta.available_versions||[]).filter(v=>v.endsWith('| FY'+fy));
+  let versions = (data.meta.available_versions||[]).filter(v=>v.endsWith('| FY'+fy));
+  const _visOv = versions.filter(v => !VERSION_HIDDEN.has(baseVersion(v)) && authVersionAllowed(baseVersion(v)));
+  if (_visOv.length) versions = _visOv;
   const rank = v => { if(/8\+4/i.test(v))return 0; if(v.startsWith('Working'))return 1; if(/AOP/i.test(v))return 2; return 3; };
   versions.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b));
   const defaultVer = versions[0]||null;
