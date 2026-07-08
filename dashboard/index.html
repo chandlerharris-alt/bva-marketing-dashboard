@@ -1575,8 +1575,8 @@ function initTab(){
     const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
     show('channel-field', false);       // channel dropdown never shown (media uses on-grid buttons)
     show('company-field', !isMedia);    // company dropdown on OPEX; media uses on-grid region buttons
-    show('cmpb-field', isMedia);        // Compare B only on media
-    show('cmppy-field', isMedia);       // Prior Period selector only on media (OPEX auto = prior FY)
+    show('cmpb-field', false);          // Compare B removed on both grids (single "Plan" column)
+    show('cmppy-field', false);         // Prior Period auto-fixed to prior FY on both grids
   }
   render();
 
@@ -3123,7 +3123,7 @@ function catRow(cat, actual, a, b, py){
   }
   // OPEX (+ region tabs) show PY / Plan / Actuals (3 cols). The Media grid keeps the
   // full PY / AOP / 8+4 / Actuals (4 cols) since it shares these helpers.
-  const planOnly = ACTIVE_SLUG !== 'media';
+  const planOnly = true;  // both OPEX and Media now use PY / Plan / Actuals
   const vals = planOnly
     ? `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
     : `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(b)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
@@ -3136,7 +3136,7 @@ function catRow(cat, actual, a, b, py){
 }
 function acctRow(cat, a, actual, cmpA, cmpB, cmpPY){
   const acctLabel = a.reporting_account + (a.account_name && a.account_name !== a.reporting_account ? ' — ' + a.account_name : '');
-  const planOnly = ACTIVE_SLUG !== 'media';
+  const planOnly = true;  // both OPEX and Media now use PY / Plan / Actuals
   const vals = planOnly
     ? `<td class="num section-val">${fmtUSD(cmpPY)}</td><td class="num section-val">${fmtUSD(cmpA)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
     : `<td class="num section-val">${fmtUSD(cmpPY)}</td><td class="num section-val">${fmtUSD(cmpB)}</td><td class="num section-val">${fmtUSD(cmpA)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
@@ -3148,7 +3148,7 @@ function acctRow(cat, a, actual, cmpA, cmpB, cmpPY){
   </tr>`;
 }
 function totalRow(label, actual, a, b, py){
-  const planOnly = ACTIVE_SLUG !== 'media';
+  const planOnly = true;  // both OPEX and Media now use PY / Plan / Actuals
   const vals = planOnly
     ? `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
     : `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(b)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
@@ -3234,11 +3234,11 @@ function buildMediaGrid(){
 
   const rows = [];
   rows.push(`<table class="bva"><thead>`);
-  rows.push(`<tr class="group-row"><th></th><th colspan="4" class="section-val">Values</th><th colspan="3" class="section-d">$ Variance (vs Actual)</th><th colspan="3" class="section-p">% Variance (vs Actual)</th></tr>`);
+  rows.push(`<tr class="group-row"><th></th><th colspan="3" class="section-val">Values</th><th colspan="2" class="section-d">$ Variance (vs Actual)</th><th colspan="2" class="section-p">% Variance (vs Actual)</th></tr>`);
   rows.push(`<tr class="col-row"><th>Revenue / Advertising</th>
-    <th class="section-val">PY</th><th class="section-val">AOP</th><th class="section-val">8+4</th><th class="section-val">Actuals</th>
-    <th class="section-d">PY</th><th class="section-d">AOP</th><th class="section-d">8+4</th>
-    <th class="section-p">PY</th><th class="section-p">AOP</th><th class="section-p">8+4</th></tr>`);
+    <th class="section-val">PY</th><th class="section-val">Plan</th><th class="section-val">Actuals</th>
+    <th class="section-d">PY</th><th class="section-d">Plan</th>
+    <th class="section-p">PY</th><th class="section-p">Plan</th></tr>`);
   rows.push(`</thead><tbody>`);
   rows.push(revRowMedia('Gross Revenue', rev));
   rows.push(catRow('Paid Media', paid.actual, paid.a, paid.b, paid.py));
@@ -3269,23 +3269,23 @@ function buildMediaGrid(){
 }
 function revRowMedia(label, v){
   return `<tr class="subtotal"><td>${label}</td>
-    <td class="num section-val">${fmtUSD(v.py)}</td><td class="num section-val">${fmtUSD(v.b)}</td><td class="num section-val">${fmtUSD(v.a)}</td><td class="num section-val">${fmtUSD(v.actual)}</td>
-    ${deltaCells(v.actual, [v.py, v.b, v.a], true)}</tr>`;
+    <td class="num section-val">${fmtUSD(v.py)}</td><td class="num section-val">${fmtUSD(v.a)}</td><td class="num section-val">${fmtUSD(v.actual)}</td>
+    ${deltaCells(v.actual, [v.py, v.a], true)}</tr>`;
 }
 function pctRowMedia(label, grp, rev){
   const pv = (g, r) => (r && Math.abs(r) > 0.5) ? g/r : null;
-  const pPY=pv(grp.py,rev.py), pB=pv(grp.b,rev.b), pA=pv(grp.a,rev.a), pAct=pv(grp.actual,rev.actual);
+  const pPY=pv(grp.py,rev.py), pA=pv(grp.a,rev.a), pAct=pv(grp.actual,rev.actual);
   const fmtP = p => p==null ? '—' : (p*100).toFixed(1)+'%';
   const bpsCell = pVer => {
     if (pVer==null || pAct==null) return `<td class="num section-d muted">—</td>`;
-    const bps = Math.round((pVer - pAct) * 10000);  // forecast% − actual% : positive = actual ratio lower = favorable
+    const bps = Math.round((pVer - pAct) * 10000);  // plan% − actual% : positive = actual ratio lower = favorable
     const cls = bps > 0 ? 'fav' : bps < 0 ? 'unfav' : 'muted';
     return `<td class="num section-d ${cls}">${bps>0?'+':''}${bps} bps</td>`;
   };
   return `<tr class="media-pct-row" style="font-style:italic;background:#eef4f8;font-weight:600;color:#01323C"><td>${label}</td>
-    <td class="num section-val">${fmtP(pPY)}</td><td class="num section-val">${fmtP(pB)}</td><td class="num section-val">${fmtP(pA)}</td><td class="num section-val">${fmtP(pAct)}</td>
-    ${bpsCell(pPY)}${bpsCell(pB)}${bpsCell(pA)}
-    <td class="num section-p muted">—</td><td class="num section-p muted">—</td><td class="num section-p muted">—</td></tr>`;
+    <td class="num section-val">${fmtP(pPY)}</td><td class="num section-val">${fmtP(pA)}</td><td class="num section-val">${fmtP(pAct)}</td>
+    ${bpsCell(pPY)}${bpsCell(pA)}
+    <td class="num section-p muted">—</td><td class="num section-p muted">—</td></tr>`;
 }
 
 // ===== Per-company sectioned BvA table (used when manifest breakdown === 'company') =====
