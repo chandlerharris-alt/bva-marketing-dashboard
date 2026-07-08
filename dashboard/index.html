@@ -1311,9 +1311,12 @@ function loadTab(slug){
   // Virtual tabs (no own JSON) use dataSlug to fetch from another tab's data
   const dataSlug = (tab && tab.virtual && tab.dataSlug) ? tab.dataSlug : slug;
   fetch(`../data/${dataSlug}.json`, {cache:'no-store'})
-    .then(r => r.json())
-    .then(d => { DATA = d; initTab(); })
-    .catch(err => { document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Failed: '+err+'</div>'; });
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(d => { DATA = d; })
+    .catch(err => { document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Failed to load data: '+err+'</div>'; DATA = null; })
+    // initTab()/render() run OUTSIDE the fetch catch — a render exception must not be
+    // mistaken for a load failure and wipe the grid that already rendered.
+    .then(() => { if (DATA) { try { initTab(); } catch(e){ console.error('initTab/render error:', e); } } });
 }
 
 function loadTotalWarehousingFallback(){
@@ -1589,12 +1592,16 @@ function setupComparisonPickers(){
   };
   fill(document.getElementById('cmp-a'), versionOpts, /8\+4 Final/);
   // Prefer AOP Final, then any AOP variant for the selected FY
+  // AOP column: prefer the SELECTED FY's own AOP cut (e.g. "FY27 AOP v5.5.26" when FY27
+  // is selected) so the AOP column tracks the year you're viewing, not always FY26. Fall
+  // back to any "AOP Final", then any AOP variant.
   const cmpBEl = document.getElementById('cmp-b');
-  fill(cmpBEl, versionOpts, /AOP Final/);
-  if (!cmpBEl.value || !versionOpts.find(o => o.value === cmpBEl.value)){
-    const aopMatch = versionOpts.find(o => /AOP/i.test(o.label));
-    if (aopMatch) cmpBEl.value = aopMatch.value;
-  }
+  const fyTag = 'FY' + (fy - 2000);
+  fill(cmpBEl, versionOpts);
+  const aopPick = versionOpts.find(o => /AOP/i.test(o.label) && o.label.startsWith(fyTag))
+    || versionOpts.find(o => /AOP Final/.test(o.label))
+    || versionOpts.find(o => /AOP/i.test(o.label));
+  if (aopPick) cmpBEl.value = aopPick.value;
   fill(document.getElementById('cmp-py'), pyOptions.length ? pyOptions : versionOpts);
 
   STATE.cmpA = document.getElementById('cmp-a').value;
@@ -3753,6 +3760,10 @@ function expansionHTML(a){
 
 // ===== Charts =====
 function renderCharts(){
+  // Chart.js is vendored (vendor/chart.umd.min.js). If it failed to load, skip charts
+  // rather than throwing — a throw here would propagate out of initTab() into loadTab()'s
+  // .catch and wipe the freshly-rendered grid ("Failed: Chart is not defined").
+  if (typeof Chart === 'undefined') { return; }
   const chartAccts = DATA.accounts.filter(a => !shouldExcludeFromBva(a.reporting_account) && !isExcludedCategory(a.category||''));
   const cats = [...new Set(chartAccts.map(a => a.category))];
   const colorMap = {
