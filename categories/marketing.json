@@ -1,0 +1,165 @@
+{
+  "_last_updated": "2026-07-08T22:37:50.756Z",
+  "_last_updated_by": "chandler.harris@ifit.com",
+  "slug": "marketing",
+  "categories": [
+    {
+      "id": "uc-1781098665873-905",
+      "name": "Salesforce",
+      "color": "#fde68a"
+    },
+    {
+      "id": "uc-1781098673248-843",
+      "name": "Twilio",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1781098692041-252",
+      "name": "Branch Metrics",
+      "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1781098707653-986",
+      "name": "Segment",
+      "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1781098717950-956",
+      "name": "Profound AI",
+      "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1781098723821-836",
+      "name": "Neustar",
+      "color": "#fed7aa"
+    },
+    {
+      "id": "uc-1781098729034-349",
+      "name": "RockerBox",
+      "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1781098735166-532",
+      "name": "Impact",
+      "color": "#fecaca"
+    },
+    {
+      "id": "uc-1781098755734-842",
+      "name": "Jivox",
+      "color": "#d9f99d"
+    },
+    {
+      "id": "uc-1781098760949-478",
+      "name": "Stackline",
+      "color": "#e9d5ff"
+    },
+    {
+      "id": "uc-1781098773539-916",
+      "name": "Sprout",
+      "color": "#fde68a"
+    },
+    {
+      "id": "uc-1781101094834-906",
+      "name": "Brand Safety",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1781101102588-446",
+      "name": "Other",
+      "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1781101111537-868",
+      "name": "BrightEdge",
+      "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1781101128451-391",
+      "name": "OneSignal",
+      "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1781101140804-534",
+      "name": "Feedonomics",
+      "color": "#fed7aa"
+    },
+    {
+      "id": "uc-1781101155125-680",
+      "name": "Smartcat",
+      "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1781101166678-187",
+      "name": "Validity",
+      "color": "#fecaca"
+    },
+    {
+      "id": "uc-1781101174082-987",
+      "name": "FOMO AI",
+      "color": "#d9f99d"
+    },
+    {
+      "id": "uc-1781101187427-956",
+      "name": "ECDesign",
+      "color": "#e9d5ff"
+    },
+    {
+      "id": "uc-1783547305173-345",
+      "name": "Qualtrics",
+      "color": "#fde68a"
+    }
+  ],
+  "descToCategory": {},
+  "descToCategoryByAcct": {
+    "7865000": {
+      "50610 salesfo amort": "uc-1781098665873-905",
+      "58257 twilio  amort": "uc-1781098673248-843",
+      "branch metrics": "uc-1781098692041-252",
+      "salesforce marketing cloud fy26": "uc-1781098665873-905",
+      "segment renewal": "uc-1781098707653-986",
+      "58257 twilio amort accrua": "uc-1781098673248-843",
+      "cooper amort accrual": "uc-1781098717950-956",
+      "neustar information": "uc-1781098723821-836",
+      "53593 rockerb amort": "uc-1781098729034-349",
+      "impact (platform fee)": "uc-1781098735166-532",
+      "rockerbox fy26": "uc-1781098729034-349",
+      "neustar": "uc-1781098723821-836",
+      "impact tech inc": "uc-1781098735166-532",
+      "jivox (dco)": "uc-1781098755734-842",
+      "57076 stackli amort": "uc-1781098760949-478",
+      "stackline": "uc-1781098760949-478",
+      "branch metrics fy26": "uc-1781098692041-252",
+      "sprout social": "uc-1781098773539-916",
+      "52678 sprout  amort": "uc-1781098773539-916",
+      "52386 branch  amort": "uc-1781098692041-252",
+      "brand safety (doubleverify or ias)": "uc-1781101094834-906",
+      "american express": "uc-1781101102588-446",
+      "brightedge": "uc-1781101111537-868",
+      "profound (aeo)": "uc-1781098717950-956",
+      "onesignal": "uc-1781101128451-391",
+      "segment catchup": "uc-1781098707653-986",
+      "feedonomics": "uc-1781101140804-534",
+      "6876 brighted amort": "uc-1781101111537-868",
+      "57239 smartca amort": "uc-1781101155125-680",
+      "smartcat": "uc-1781101155125-680",
+      "51867 validit amort": "uc-1781101166678-187",
+      "fomo ai": "uc-1781101174082-987",
+      "53593 rockerbox amort acc": "uc-1781098729034-349",
+      "3240   ecdesign sweden ab": "uc-1781101187427-956",
+      "ecdesign sweden ab": "uc-1781101187427-956",
+      "branch catch-up": "uc-1781098692041-252",
+      "cooper sq amort accrual": "uc-1781098717950-956",
+      "51867 valididty": "uc-1781101166678-187",
+      "validity, inc": "uc-1781101166678-187",
+      "sprout accrual": "uc-1781098773539-916",
+      "crm - marketing cloud software": "uc-1781098665873-905",
+      "salesforce amort reclass": "uc-1781098665873-905",
+      "5651 qualtric amort": "uc-1783547305173-345",
+      "qualtrics amort reclass": "uc-1783547305173-345",
+      "impact reclass": "uc-1781098735166-532",
+      "52311 twilio  amort": "uc-1781098673248-843",
+      "neustar information recla": "uc-1781098723821-836",
+      "57305   neustar informati": "uc-1781098723821-836"
+    }
+  }
+}
