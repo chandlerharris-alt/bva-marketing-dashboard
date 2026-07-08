@@ -664,9 +664,9 @@ tr:hover .fc-del-icon{opacity:1}
     </div>
     <div class="field"><label>Fiscal Year</label><select id="fy-select"></select></div>
     <div class="field" id="month-field"><label>As of Month</label><select id="month-select"></select></div>
-    <div class="field"><label>Compare A</label><select id="cmp-a"></select></div>
-    <div class="field"><label>Compare B</label><select id="cmp-b"></select></div>
-    <div class="field"><label>Prior Period</label><select id="cmp-py"></select></div>
+    <div class="field" id="cmpa-field"><label>Plan</label><select id="cmp-a"></select></div>
+    <div class="field" id="cmpb-field"><label>Compare B</label><select id="cmp-b"></select></div>
+    <div class="field" id="cmppy-field"><label>Prior Period</label><select id="cmp-py"></select></div>
     <div class="field" id="company-field"><label>Source Companies</label>
       <div class="multisel" id="co-multisel">
         <button class="multisel-trigger" id="co-trigger">All companies</button>
@@ -1566,13 +1566,17 @@ function initTab(){
   });
 
   setupComparisonPickers();
-  // The Media tab uses on-grid Channel + Region buttons — hide the redundant filterbar dropdowns.
+  // Filterbar field visibility.
+  //  • Media: on-grid Channel + Region buttons (hide those dropdowns); keeps Compare A/B/Prior Period.
+  //  • OPEX (+ region tabs): simplified — "Plan" (Compare A) + Currency; Compare B, Prior Period, and
+  //    Channel are hidden (prior period is fixed to the same month last fiscal year via cmpPY).
   {
-    const _isMedia = ACTIVE_SLUG === 'media';
-    const _ch = document.getElementById('channel-field');
-    const _co = document.getElementById('company-field');
-    if (_isMedia){ if(_ch) _ch.style.display='none'; if(_co) _co.style.display='none'; }
-    else if (_co) { _co.style.display=''; }
+    const isMedia = ACTIVE_SLUG === 'media';
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    show('channel-field', false);       // channel dropdown never shown (media uses on-grid buttons)
+    show('company-field', !isMedia);    // company dropdown on OPEX; media uses on-grid region buttons
+    show('cmpb-field', isMedia);        // Compare B only on media
+    show('cmppy-field', isMedia);       // Prior Period selector only on media (OPEX auto = prior FY)
   }
   render();
 
@@ -3005,22 +3009,19 @@ function buildTable(){
   rows.push(`<table class="bva"><thead>`);
   rows.push(`<tr class="group-row">
     <th></th>
-    <th colspan="4" class="section-val">Values</th>
-    <th colspan="3" class="section-d">$ Variance (vs Actual)</th>
-    <th colspan="3" class="section-p">% Variance (vs Actual)</th>
+    <th colspan="3" class="section-val">Values</th>
+    <th colspan="2" class="section-d">$ Variance (vs Actual)</th>
+    <th colspan="2" class="section-p">% Variance (vs Actual)</th>
   </tr>`);
   rows.push(`<tr class="col-row">
     <th>Category / Account</th>
     <th class="section-val">PY</th>
-    <th class="section-val">AOP</th>
-    <th class="section-val">8+4</th>
+    <th class="section-val">Plan</th>
     <th class="section-val">Actuals</th>
     <th class="section-d">PY</th>
-    <th class="section-d">AOP</th>
-    <th class="section-d">8+4</th>
+    <th class="section-d">Plan</th>
     <th class="section-p">PY</th>
-    <th class="section-p">AOP</th>
-    <th class="section-p">8+4</th>
+    <th class="section-p">Plan</th>
   </tr>`);
   rows.push(`</thead><tbody>`);
 
@@ -3076,10 +3077,10 @@ function buildTable(){
     const adj = rollup(getAddbackArray());
     if (Math.abs(adj) > 0.5){
       rows.push(`<tr class="acct-row" style="opacity:.65"><td style="font-style:italic;color:var(--gray)">EBITDA Addback (proforma — routed to accounts above)</td>
-        <td class="num section-val muted">—</td><td class="num section-val muted">—</td><td class="num section-val muted">—</td>
+        <td class="num section-val muted">—</td><td class="num section-val muted">—</td>
         <td class="num section-val muted">${fmtUSD(adj)}</td>
-        <td class="num section-d muted">—</td><td class="num section-d muted">—</td><td class="num section-d muted">—</td>
-        <td class="num section-p muted">—</td><td class="num section-p muted">—</td><td class="num section-p muted">—</td>
+        <td class="num section-d muted">—</td><td class="num section-d muted">—</td>
+        <td class="num section-p muted">—</td><td class="num section-p muted">—</td>
       </tr>`);
     }
   }
@@ -3120,34 +3121,42 @@ function catRow(cat, actual, a, b, py){
   } else {
     commentRow = `<tr class="cat-comment-row${existing?' pinned':''}" data-cat="${cat}" style="display:none"><td colspan="11" style="padding:4px 14px 8px;background:#fafcff;border-bottom:1px solid var(--gray-200)"><div style="display:flex;gap:8px;align-items:flex-start"><span style="font-size:10px;color:var(--gray);white-space:nowrap;padding-top:5px">${cat}:</span><textarea class="var-comment cat-cmt" rows="1" data-acct="${cKey}" data-fm="${fm}" placeholder="Add variance comment…" style="flex:1">${existing?existing.text.replace(/</g,'&lt;'):''}</textarea></div></td></tr>`;
   }
+  // OPEX (+ region tabs) show PY / Plan / Actuals (3 cols). The Media grid keeps the
+  // full PY / AOP / 8+4 / Actuals (4 cols) since it shares these helpers.
+  const planOnly = ACTIVE_SLUG !== 'media';
+  const vals = planOnly
+    ? `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
+    : `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(b)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
+  const deltas = planOnly ? deltaCells(actual, [py, a], isRevenueCat(cat)) : deltaCells(actual, [py, b, a], isRevenueCat(cat));
   return `<tr class="cat-row" data-cat="${cat}">
     <td>${cat}${commentIcon}</td>
-    <td class="num section-val">${fmtUSD(py)}</td>
-    <td class="num section-val">${fmtUSD(b)}</td>
-    <td class="num section-val">${fmtUSD(a)}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    ${deltaCells(actual, [py, b, a], isRevenueCat(cat))}
+    ${vals}
+    ${deltas}
   </tr>${commentRow}`;
 }
 function acctRow(cat, a, actual, cmpA, cmpB, cmpPY){
   const acctLabel = a.reporting_account + (a.account_name && a.account_name !== a.reporting_account ? ' — ' + a.account_name : '');
+  const planOnly = ACTIVE_SLUG !== 'media';
+  const vals = planOnly
+    ? `<td class="num section-val">${fmtUSD(cmpPY)}</td><td class="num section-val">${fmtUSD(cmpA)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
+    : `<td class="num section-val">${fmtUSD(cmpPY)}</td><td class="num section-val">${fmtUSD(cmpB)}</td><td class="num section-val">${fmtUSD(cmpA)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
+  const deltas = planOnly ? deltaCells(actual, [cmpPY, cmpA], isRevenueCat(cat)) : deltaCells(actual, [cmpPY, cmpB, cmpA], isRevenueCat(cat));
   return `<tr class="acct-row" data-parent-cat="${cat}" data-acct="${a.reporting_account}" style="display:none">
     <td>${acctLabel}</td>
-    <td class="num section-val">${fmtUSD(cmpPY)}</td>
-    <td class="num section-val">${fmtUSD(cmpB)}</td>
-    <td class="num section-val">${fmtUSD(cmpA)}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    ${deltaCells(actual, [cmpPY, cmpB, cmpA], isRevenueCat(cat))}
+    ${vals}
+    ${deltas}
   </tr>`;
 }
 function totalRow(label, actual, a, b, py){
+  const planOnly = ACTIVE_SLUG !== 'media';
+  const vals = planOnly
+    ? `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`
+    : `<td class="num section-val">${fmtUSD(py)}</td><td class="num section-val">${fmtUSD(b)}</td><td class="num section-val">${fmtUSD(a)}</td><td class="num section-val">${fmtUSD(actual)}</td>`;
+  const deltas = planOnly ? deltaCells(actual, [py, a], false) : deltaCells(actual, [py, b, a], false);
   return `<tr class="subtotal">
     <td>${label}</td>
-    <td class="num section-val">${fmtUSD(py)}</td>
-    <td class="num section-val">${fmtUSD(b)}</td>
-    <td class="num section-val">${fmtUSD(a)}</td>
-    <td class="num section-val">${fmtUSD(actual)}</td>
-    ${deltaCells(actual, [py, b, a], false)}
+    ${vals}
+    ${deltas}
   </tr>`;
 }
 
