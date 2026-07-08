@@ -15,6 +15,7 @@
 //   GITHUB_OWNER        — e.g. "devinlindsay-ifit"
 //   GITHUB_REPO         — e.g. "bva-member-care-dashboard"
 //   GITHUB_BRANCH       — usually "main"
+import { getAccess, can, canSee } from '../_access.js';
 
 export const onRequestGet = async (context) => {
   const { user } = context.data;
@@ -29,17 +30,9 @@ export const onRequestGet = async (context) => {
     return json({ error: 'missing_fields', need: ['slug', 'fy'] }, 400);
   }
 
-  // Check user has access to this slug
-  let access = {};
-  try {
-    const accessUrl = new URL(context.request.url);
-    accessUrl.pathname = '/access.json';
-    const res = await context.env.ASSETS.fetch(accessUrl.toString());
-    if (res.ok) access = await res.json();
-  } catch(e){}
-  const userEntry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  const allowed = userEntry?.slugs;
-  if (!userEntry || (allowed !== '*' && !(Array.isArray(allowed) && allowed.includes(slug)))){
+  // Check the user can view this tab.
+  const meGet = await getAccess(context, user.email);
+  if (!canSee(meGet, slug)){
     return json({ error: 'forbidden', detail: `${user.email} cannot access ${slug}` }, 403);
   }
 
@@ -82,22 +75,10 @@ export const onRequestPost = async (context) => {
     return json({ error: 'missing_fields', need: ['slug', 'fy', 'fm', 'account', 'text'] }, 400);
   }
 
-  // Check user has access to this slug
-  let access = {};
-  try {
-    const url = new URL(context.request.url);
-    url.pathname = '/access.json';
-    const res = await context.env.ASSETS.fetch(url.toString());
-    if (res.ok) access = await res.json();
-  } catch(e){}
-  const userEntry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  const allowed = userEntry?.slugs;
-  if (!userEntry || (allowed !== '*' && !(Array.isArray(allowed) && allowed.includes(slug)))){
-    return json({ error: 'forbidden', detail: `${user.email} cannot edit ${slug}` }, 403);
-  }
-  const role = userEntry.role || 'viewer';
-  if (role !== 'admin' && role !== 'editor'){
-    return json({ error: 'forbidden', detail: 'role does not allow editing' }, 403);
+  // Check the user has Comment access on this tab.
+  const mePost = await getAccess(context, user.email);
+  if (!can(mePost, slug, 'comment')){
+    return json({ error: 'forbidden', detail: 'comment access required for this tab' }, 403);
   }
 
   // Validate env config

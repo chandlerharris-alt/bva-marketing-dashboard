@@ -8,6 +8,7 @@
 //   GITHUB_OWNER        — e.g. "devinlindsay-ifit"
 //   GITHUB_REPO         — e.g. "bva-member-care-dashboard"
 //   GITHUB_BRANCH       — usually "main"
+import { getAccess, can } from '../_access.js';
 
 export const onRequestPost = async (context) => {
   const { user } = context.data;
@@ -24,22 +25,10 @@ export const onRequestPost = async (context) => {
     return json({ error: 'missing_fields', need: ['slug','version','source','overrides'] }, 400);
   }
 
-  // Check user has access to this slug
-  let access = {};
-  try {
-    const url = new URL(context.request.url);
-    url.pathname = '/access.json';
-    const res = await context.env.ASSETS.fetch(url.toString());
-    if (res.ok) access = await res.json();
-  } catch(e){}
-  const userEntry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  const allowed = userEntry?.slugs;
-  if (!userEntry || (allowed !== '*' && !(Array.isArray(allowed) && allowed.includes(slug)))){
-    return json({ error: 'forbidden', detail: `${user.email} cannot edit ${slug}` }, 403);
-  }
-  const role = userEntry.role || 'viewer';
-  if (role !== 'admin' && role !== 'editor'){
-    return json({ error: 'forbidden', detail: 'role does not allow editing' }, 403);
+  // Check the user has Forecast-edit access on this tab.
+  const me = await getAccess(context, user.email);
+  if (!can(me, slug, 'forecast')){
+    return json({ error: 'forbidden', detail: 'forecast-edit access required for this tab' }, 403);
   }
 
   // Validate env config

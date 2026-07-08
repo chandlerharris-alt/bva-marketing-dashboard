@@ -1,5 +1,6 @@
 // GET  /api/categories?slug=<slug>  → return saved categories + desc mapping
 // POST /api/categories               → body: { slug, categories, descToCategory }
+import { getAccess, can, canSee } from '../_access.js';
 
 export const onRequestGet = async (context) => {
   const { user } = context.data;
@@ -9,8 +10,8 @@ export const onRequestGet = async (context) => {
   const slug = url.searchParams.get('slug');
   if (!slug) return json({ error: 'missing_slug' }, 400);
 
-  const allowed = await checkUserAllowedForSlug(context, user.email, slug);
-  if (!allowed) return json({ error: 'forbidden' }, 403);
+  const me = await getAccess(context, user.email);
+  if (!canSee(me, slug)) return json({ error: 'forbidden' }, 403);
 
   const env = context.env || {};
   const token = env.GITHUB_TOKEN, owner = env.GITHUB_OWNER, repo = env.GITHUB_REPO;
@@ -46,9 +47,9 @@ export const onRequestPost = async (context) => {
   }
   const perAcct = (descToCategoryByAcct && typeof descToCategoryByAcct === 'object') ? descToCategoryByAcct : {};
 
-  const role = await getUserRoleForSlug(context, user.email, slug);
-  if (role !== 'admin' && role !== 'editor'){
-    return json({ error: 'forbidden', detail: 'editor or admin role required' }, 403);
+  const me = await getAccess(context, user.email);
+  if (!can(me, slug, 'tag')){
+    return json({ error: 'forbidden', detail: 'tag-edit access required for this tab' }, 403);
   }
 
   const env = context.env || {};

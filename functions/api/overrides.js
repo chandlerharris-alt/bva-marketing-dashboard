@@ -1,5 +1,6 @@
 // GET  /api/overrides?slug=<slug>     → return saved overrides for a slug
 // POST /api/overrides                  → save a single line override
+import { getAccess, can } from '../_access.js';
 
 export const onRequestPost = async (context) => {
   const { user } = context.data;
@@ -92,21 +93,8 @@ export const onRequestGet = async (context) => {
   const slug = url.searchParams.get('slug');
   if (!slug) return json({ error: 'missing_slug' }, 400);
 
-  let access = {};
-  try {
-    const u = new URL(context.request.url);
-    u.pathname = '/access.json';
-    const r = await context.env.ASSETS.fetch(u.toString());
-    if (r.ok) access = await r.json();
-  } catch (e){}
-  const entry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  const role = entry?.role || 'denied';
-  if (role === 'denied' || !entry){
-    return json({ error: 'forbidden', detail: 'no access granted' }, 403);
-  }
-  const allowed = entry.slugs;
-  const canSee = allowed === '*' || (Array.isArray(allowed) && allowed.includes(slug));
-  if (!canSee){
+  const role = await getUserRoleForSlug(context, user.email, slug);
+  if (role === 'denied'){
     return json({ error: 'forbidden', detail: 'no access to this slug' }, 403);
   }
 
@@ -167,12 +155,11 @@ async function loadAccess(context){
   return { users: {} };
 }
 async function getUserRoleForSlug(context, email, slug){
-  const access = await loadAccess(context);
-  const entry = (access.users || {})[email.toLowerCase()] || (access.users || {})[email];
-  if (!entry) return 'denied';
-  const allowed = entry.slugs;
-  if (allowed !== '*' && !(Array.isArray(allowed) && allowed.includes(slug))) return 'denied';
-  return entry.role || 'viewer';
+  const me = await getAccess(context, email);
+  if (me.admin) return 'admin';
+  if (can(me, slug, 'forecast')) return 'editor';   // overrides = forecast-line edits
+  if (can(me, slug, 'view') || can(me, slug, 'tag') || can(me, slug, 'comment')) return 'viewer';
+  return 'denied';
 }
 async function ghGetFile({ token, owner, repo, branch, path }){
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`;

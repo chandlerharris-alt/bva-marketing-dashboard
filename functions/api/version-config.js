@@ -46,7 +46,7 @@ export const onRequestPost = async (context) => {
 async function isAdmin(context, user){
   const access = await loadAccess(context);
   const entry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  return !!(entry && entry.role === 'admin');
+  return !!(entry && (entry.admin === true || entry.role === 'admin'));
 }
 async function loadAccess(context){
   try {

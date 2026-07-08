@@ -1,26 +1,21 @@
 // GET /api/audit?slug=<slug>&limit=20
 // Returns the most recent audit log entries (filtered by slug if provided).
+import { getAccess, isAdmin, canSee } from '../_access.js';
+
 export const onRequestGet = async (context) => {
   const { user } = context.data;
   if (!user || !user.email){
     return new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401, headers: { 'content-type': 'application/json' } });
   }
-  let access = {};
-  try {
-    const u = new URL(context.request.url);
-    u.pathname = '/access.json';
-    const r = await context.env.ASSETS.fetch(u.toString());
-    if (r.ok) access = await r.json();
-  } catch (e){}
-  const entry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  if (!entry || entry.role === 'denied'){
+  const me = await getAccess(context, user.email);
+  const hasAny = isAdmin(me) || Object.keys(me.tabs || {}).length > 0;
+  if (!hasAny){
     return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403, headers: { 'content-type': 'application/json' } });
   }
   const url = new URL(context.request.url);
   const slug = url.searchParams.get('slug');
   const limit = Math.min(200, parseInt(url.searchParams.get('limit') || '20', 10));
-  const allowed = entry.slugs;
-  const slugFilter = (s) => allowed === '*' || (Array.isArray(allowed) && allowed.includes(s));
+  const slugFilter = (s) => canSee(me, s);
 
   const env = context.env || {};
   const token  = env.GITHUB_TOKEN;
@@ -49,7 +44,7 @@ export const onRequestGet = async (context) => {
       try {
         const obj = JSON.parse(line);
         if (slug && obj.slug !== slug) return;
-        if (entry.role !== 'admin' && obj.slug && !slugFilter(obj.slug)) return;
+        if (!isAdmin(me) && obj.slug && !slugFilter(obj.slug)) return;
         entries.push(obj);
       } catch(e){}
     });

@@ -1,14 +1,15 @@
 // GET /api/access — return current access.json (admins only)
 // POST /api/access — replace access.json (admins only)
+import { normalizeEntry, isAdmin } from '../_access.js';
 
 export const onRequestGet = async (context) => {
   const { user } = context.data;
   if (!user || !user.email) return json({ error: 'unauthenticated' }, 401);
 
   const access = await loadAccess(context);
-  const myEntry = (access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email];
-  if (!myEntry || myEntry.role !== 'admin'){
-    return json({ error: 'forbidden', detail: 'admin role required' }, 403);
+  const me = normalizeEntry((access.users || {})[user.email.toLowerCase()] || (access.users || {})[user.email]);
+  if (!isAdmin(me)){
+    return json({ error: 'forbidden', detail: 'admin access required' }, 403);
   }
   return json(access);
 };
@@ -18,9 +19,9 @@ export const onRequestPost = async (context) => {
   if (!user || !user.email) return json({ error: 'unauthenticated' }, 401);
 
   const current = await loadAccess(context);
-  const myEntry = (current.users || {})[user.email.toLowerCase()] || (current.users || {})[user.email];
-  if (!myEntry || myEntry.role !== 'admin'){
-    return json({ error: 'forbidden', detail: 'admin role required' }, 403);
+  const me = normalizeEntry((current.users || {})[user.email.toLowerCase()] || (current.users || {})[user.email]);
+  if (!isAdmin(me)){
+    return json({ error: 'forbidden', detail: 'admin access required' }, 403);
   }
 
   let body;

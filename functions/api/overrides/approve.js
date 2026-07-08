@@ -1,6 +1,7 @@
 // POST /api/overrides/approve
 // Body: { slug, versionKey, source, lineId }
 // Admin-only: flips an override entry's status from "saved" to "approved".
+import { getAccess, isAdmin } from '../../_access.js';
 
 export const onRequestPost = async (context) => {
   const { user } = context.data;
@@ -13,9 +14,9 @@ export const onRequestPost = async (context) => {
     return json({ error: 'missing_fields', need: ['slug','versionKey','source','lineId'] }, 400);
   }
 
-  const role = await getUserRoleForSlug(context, user.email, slug);
-  if (role !== 'admin'){
-    return json({ error: 'forbidden', detail: 'admin role required to approve overrides' }, 403);
+  const me = await getAccess(context, user.email);
+  if (!isAdmin(me)){
+    return json({ error: 'forbidden', detail: 'admin access required to approve overrides' }, 403);
   }
 
   const env = context.env || {};
