@@ -3567,10 +3567,13 @@ function renderTable(){
       const open = tr.classList.toggle('open');
       const cat = tr.dataset.cat;
       wrap.querySelectorAll(`tr[data-parent-cat="${CSS.escape(cat)}"]`).forEach(r => {
-        if (r.classList.contains('expansion-row')){ r.style.display = 'none'; return; }
+        if (r.classList.contains('expansion-row') || r.classList.contains('drill-cat-row') || r.classList.contains('drill-txn-row')){ r.style.display = 'none'; return; }
         r.style.display = open ? '' : 'none';
       });
-      if (!open) wrap.querySelectorAll(`tr.expansion-row[data-parent-cat="${CSS.escape(cat)}"]`).forEach(r => r.remove());
+      if (!open){
+        wrap.querySelectorAll(`tr.expansion-row[data-parent-cat="${CSS.escape(cat)}"], tr.drill-cat-row[data-parent-cat="${CSS.escape(cat)}"], tr.drill-txn-row[data-parent-cat="${CSS.escape(cat)}"]`).forEach(r => r.remove());
+        wrap.querySelectorAll(`tr.acct-row.open[data-parent-cat="${CSS.escape(cat)}"]`).forEach(r => r.classList.remove('open'));
+      }
       STATE.trendFocus = open ? {type:'cat', key:cat} : null;
       renderCharts();
     };
@@ -3579,21 +3582,16 @@ function renderTable(){
     tr.onclick = (e) => {
       e.stopPropagation();
       const acct = tr.dataset.acct;
-      const next = tr.nextElementSibling;
-      if (next && next.classList.contains('expansion-row') && next.dataset.acct === acct){
-        next.remove(); tr.classList.remove('open'); return;
+      if (tr.classList.contains('open')){
+        tr.classList.remove('open'); removeDrillRows(wrap, acct);
+        STATE.trendFocus = null; renderCharts(); return;
       }
+      wrap.querySelectorAll('tr.acct-row.open').forEach(r => { r.classList.remove('open'); removeDrillRows(wrap, r.dataset.acct); });
       wrap.querySelectorAll('tr.expansion-row').forEach(r => r.remove());
-      wrap.querySelectorAll('tr.acct-row.open').forEach(r => r.classList.remove('open'));
       tr.classList.add('open');
       const a = DATA.accounts.find(x => x.reporting_account === acct);
       if (!a) return;
-      const expRow = document.createElement('tr');
-      expRow.className = 'expansion-row';
-      expRow.dataset.acct = acct;
-      expRow.dataset.parentCat = tr.dataset.parentCat;
-      expRow.innerHTML = `<td colspan="11">${expansionHTML(a)}</td>`;
-      tr.parentNode.insertBefore(expRow, tr.nextSibling);
+      insertDrillCats(tr, a);   // native category rows -> click a category for its transactions
       STATE.trendFocus = {type:'acct', key:acct};
       renderCharts();
     };
@@ -3823,6 +3821,116 @@ function expansionHTML(a){
     </div>
     ${reconBlock}
   </div>`;
+}
+
+// ===== Native drill: GL account -> tagged-category rows (column-aligned) -> transactions =====
+// Categories render as real grid rows directly under the account; click a category to reveal
+// its transactions inline. Everything respects the active region/company + channel filters, and
+// re-tagging a transaction re-groups it live (see _ucRefreshAfterAssign).
+function computeDrill(a){
+  const isRev = isRevenueCat(a.category);
+  const ssCosSet = STATE.subSection?.filter?.companies ? new Set(STATE.subSection.filter.companies.map(String)) : null;
+  const ssDeptsSet = STATE.subSection?.filter?.depts ? new Set(STATE.subSection.filter.depts.map(d => String(d).padStart(3,'0'))) : null;
+  const inPeriod = (fm) => { if (STATE.view==='MONTH') return fm===STATE.month; if (STATE.view==='QTD'){ const q=Math.floor((STATE.month-1)/3)*3+1; return fm>=q&&fm<=STATE.month; } if (STATE.view==='YTD') return fm<=STATE.month; return true; };
+  const _selRaw = (ACTIVE_SLUG==='media' && STATE.selectedChannels) ? STATE.selectedChannels : null;
+  const _allRaw = (typeof mktgRawChannels==='function') ? mktgRawChannels() : [];
+  const chFilterActive = _selRaw && _allRaw.length && _selRaw.size < _allRaw.length;
+  const selDisp = chFilterActive ? new Set(MKTG_DISPLAY_CHANNELS.filter(d => { const raws=_allRaw.filter(r=>mktgNormChannel(r)===d); return raws.length && raws.every(r=>_selRaw.has(r)); })) : null;
+  const chOk = (rowCh) => !selDisp || (rowCh!=null && selDisp.has(mktgNormChannel(rowCh)));
+  const coOk = (co) => ssCosSet ? ssCosSet.has(String(co)) : (!STATE.selectedCompanies || STATE.selectedCompanies.has(String(co)));
+
+  const actAgg={}, pyAgg={};
+  (a.drill || []).forEach(d => {
+    if (!coOk(d.source_company)) return; if (!chOk(d.channel)) return; if (!inPeriod(d.fm)) return;
+    const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
+    const k = normKey(display) || 'unknown';
+    if (d.fy===STATE.fy){ (actAgg[k] = actAgg[k] || {display, amount:0}).amount += d.amount; }
+    else if (d.fy===STATE.fy-1){ (pyAgg[k] = pyAgg[k] || {display, amount:0}).amount += d.amount; }
+  });
+  const fcAgg={};
+  const verLines = (a.forecast_lines || []).filter(l => (l.version + ' | FY' + l.fy) === STATE.cmpA).map(l => Object.assign({}, l, {account:a.reporting_account}));
+  const amortized = (typeof amortizePrepaidsInLines==='function') ? amortizePrepaidsInLines(verLines) : verLines;
+  amortized.forEach(l => {
+    if (!inPeriod(l.fm)) return;
+    if (ssDeptsSet && l.dept_str && !ssDeptsSet.has(l.dept_str)) return;
+    if (ssCosSet){ const co = l.level_code ? String(parseInt(l.level_code,10)) : ''; if (!co || !ssCosSet.has(co)) return; }
+    if (!chOk(l.channel)) return;
+    const display = l.description || l.vendor || 'Unspecified'; const k = normKey(display) || 'unspecified';
+    if (!fcAgg[k]) fcAgg[k] = {display, amount:0, expense_type:l.expense_type||'', _amortized:l._amortized||false};
+    fcAgg[k].amount += (l.amount || 0);
+  });
+  const keys = new Set([...Object.keys(fcAgg), ...Object.keys(actAgg), ...Object.keys(pyAgg)]);
+  const txns=[];
+  keys.forEach(k => {
+    const display = (fcAgg[k]?.display) || (actAgg[k]?.display) || (pyAgg[k]?.display) || k;
+    const plan = fcAgg[k]?.amount||0, actual = actAgg[k]?.amount||0, py = pyAgg[k]?.amount||0;
+    if (Math.abs(plan)+Math.abs(actual)+Math.abs(py) < 0.5) return;
+    const inFc = Math.abs(plan) > 0.5, inAc = Math.abs(actual) > 0.5;
+    let status='matched'; if (inFc && !inAc) status='unmatched-fc'; else if (!inFc && inAc) status='unmatched-act';
+    txns.push({display, plan, actual, py, status, expType:fcAgg[k]?.expense_type||'', isAmort:fcAgg[k]?._amortized||false});
+  });
+  txns.sort((x,y) => Math.max(Math.abs(y.plan),Math.abs(y.actual),Math.abs(y.py)) - Math.max(Math.abs(x.plan),Math.abs(x.actual),Math.abs(x.py)));
+  const catMap={};
+  txns.forEach(t => {
+    const cat = ucGetCategoryForDescAcct(ACTIVE_SLUG, t.display, a.reporting_account);
+    const id = cat?cat.id:'__other__', name = cat?cat.name:'Other', color = cat?cat.color:'#c9d3da';
+    if (!catMap[id]) catMap[id] = {id, name, color, py:0, plan:0, actual:0, count:0, txns:[]};
+    const c = catMap[id]; c.py+=t.py; c.plan+=t.plan; c.actual+=t.actual; c.count++; c.txns.push(t);
+  });
+  const cats = Object.values(catMap).sort((x,y) => {
+    if (x.id==='__other__') return 1; if (y.id==='__other__') return -1;
+    return Math.max(Math.abs(y.actual),Math.abs(y.plan)) - Math.max(Math.abs(x.actual),Math.abs(x.plan));
+  });
+  return {isRev, cats};
+}
+function drillCatRowHTML(a, c, isRev, parentCat){
+  const nm = String(c.name).replace(/</g,'&lt;');
+  const idAttr = String(c.id).replace(/"/g,'&quot;');
+  return `<tr class="drill-cat-row" data-acct="${a.reporting_account}" data-catid="${idAttr}" data-parent-cat="${parentCat}" onclick="toggleDrillCat(this)" style="cursor:pointer;background:#eef2f6;font-weight:600">
+    <td style="padding-left:44px"><span class="drill-caret" style="display:inline-block;width:10px;color:var(--gray)">&#9656;</span> <span class="uc-swatch" style="background:${c.color}"></span> ${nm} <span class="uc-count">${c.count}</span></td>
+    <td class="num section-val">${fmtUSD(c.py)}</td>
+    <td class="num section-val">${fmtUSD(c.plan)}</td>
+    <td class="num section-val"><strong>${fmtUSD(c.actual)}</strong></td>
+    ${deltaCells(c.actual, [c.py, c.plan], isRev)}
+  </tr>`;
+}
+function drillTxnRowHTML(a, c, t, isRev, parentCat){
+  const dsp = String(t.display).replace(/</g,'&lt;');
+  const idAttr = String(c.id).replace(/"/g,'&quot;');
+  const typePill = (t.expType && t.expType.toLowerCase()==='prepaid') ? `<span class="fc-type-badge prepaid" style="margin-left:6px">${t.isAmort?'Prepaid (spread)':'Prepaid'}</span>` : '';
+  return `<tr class="drill-txn-row" data-acct="${a.reporting_account}" data-catid="${idAttr}" data-parent-cat="${parentCat}" style="display:none;background:#fff;font-size:11.5px">
+    <td style="padding-left:64px">${dsp}${typePill} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}</td>
+    <td class="num section-val">${fmtUSD(t.py)}</td>
+    <td class="num section-val">${fmtUSD(t.plan)}</td>
+    <td class="num section-val"><strong>${fmtUSD(t.actual)}</strong></td>
+    ${deltaCells(t.actual, [t.py, t.plan], isRev)}
+  </tr>`;
+}
+function removeDrillRows(wrap, acct){
+  const esc = (window.CSS && CSS.escape) ? CSS.escape(acct) : acct;
+  wrap.querySelectorAll(`tr.drill-cat-row[data-acct="${esc}"], tr.drill-txn-row[data-acct="${esc}"]`).forEach(r => r.remove());
+}
+function insertDrillCats(tr, a){
+  const parentCat = tr.dataset.parentCat || '';
+  const d = computeDrill(a);
+  let html = '';
+  if (!d.cats.length){
+    html = `<tr class="drill-cat-row" data-acct="${a.reporting_account}" data-parent-cat="${parentCat}"><td colspan="8" style="padding:8px 46px;color:var(--gray);font-style:italic;font-size:11.5px">No activity for this account in the selected period / filters.</td></tr>`;
+  } else {
+    d.cats.forEach(c => {
+      html += drillCatRowHTML(a, c, d.isRev, parentCat);
+      c.txns.forEach(t => { html += drillTxnRowHTML(a, c, t, d.isRev, parentCat); });
+    });
+  }
+  tr.insertAdjacentHTML('afterend', html);
+}
+function toggleDrillCat(rowEl){
+  const wrap = document.getElementById('bva-wrap'); if (!wrap) return;
+  const open = rowEl.classList.toggle('open');
+  const caret = rowEl.querySelector('.drill-caret'); if (caret) caret.innerHTML = open ? '&#9662;' : '&#9656;';
+  const escA = (window.CSS && CSS.escape) ? CSS.escape(rowEl.dataset.acct) : rowEl.dataset.acct;
+  const escC = (window.CSS && CSS.escape) ? CSS.escape(rowEl.dataset.catid) : rowEl.dataset.catid;
+  wrap.querySelectorAll(`tr.drill-txn-row[data-acct="${escA}"][data-catid="${escC}"]`).forEach(r => r.style.display = open ? '' : 'none');
 }
 
 // ===== Charts =====
@@ -6905,13 +7013,20 @@ function _ucRefreshAfterAssign(){
     return;
   }
   if (STATE.viewMode === 'forecast' && typeof renderForecastPane === 'function'){ renderForecastPane(); return; }
+  const accounts = typeof getMergedAccounts === 'function' ? getMergedAccounts() : (DATA ? DATA.accounts : []);
+  // Native drill (main grid): rebuild the open account's category/transaction rows so the
+  // re-tagged transaction immediately re-groups under its new category.
+  const wrapEl = document.getElementById('bva-wrap');
+  const openAcct = wrapEl ? wrapEl.querySelector('tr.acct-row.open[data-acct]') : null;
+  if (openAcct){
+    const a = accounts.find(x => x.reporting_account === openAcct.dataset.acct);
+    if (a){ removeDrillRows(wrapEl, openAcct.dataset.acct); insertDrillCats(openAcct, a); return; }
+  }
   const expRow = document.querySelector('tr.expansion-row[data-acct]');
   if (!expRow){ if (typeof render === 'function') render(); return; }
-  const acct = expRow.dataset.acct;
-  const accounts = typeof getMergedAccounts === 'function' ? getMergedAccounts() : (DATA ? DATA.accounts : []);
-  const a = accounts.find(x => x.reporting_account === acct);
-  if (!a){ if (typeof render === 'function') render(); return; }
-  expRow.innerHTML = '<td colspan="99">' + expansionHTML(a) + '</td>';
+  const a2 = accounts.find(x => x.reporting_account === expRow.dataset.acct);
+  if (!a2){ if (typeof render === 'function') render(); return; }
+  expRow.innerHTML = '<td colspan="99">' + expansionHTML(a2) + '</td>';
 }
 function ucSelect(catId){
   const pop = document.getElementById('uc-popover');
