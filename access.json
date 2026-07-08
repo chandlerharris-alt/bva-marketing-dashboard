@@ -30,6 +30,20 @@
         }
       },
       "versions": "*"
+    },
+    "megan.bitton@ifit.com": {
+      "admin": false,
+      "tabs": {
+        "marketing": {
+          "view": true
+        },
+        "media": {
+          "view": true,
+          "tag": true,
+          "comment": true
+        }
+      },
+      "versions": "*"
     }
   },
   "_default_for_unlisted_users": {
