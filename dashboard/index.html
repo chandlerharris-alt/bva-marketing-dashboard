@@ -702,7 +702,7 @@ tr:hover .fc-del-icon{opacity:1}
   <!-- ===== View mode toggle bar (above all content) ===== -->
   <div id="view-mode-bar" style="background:#fff; border-bottom:1px solid var(--border); padding:10px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap">
     <div class="pill-group" id="bva-fc-toggle">
-      <button data-vm="bva" class="active" onclick="setViewMode('bva')">BvA</button>
+      <button data-vm="bva" class="active" onclick="setViewMode('bva')">Financial Performance</button>
       <button data-vm="forecast" onclick="setViewMode('forecast')">Forecast &#9660;</button>
     </div>
     <div id="fc-version-area" style="display:none; align-items:center; gap:8px">
@@ -755,12 +755,15 @@ tr:hover .fc-del-icon{opacity:1}
     </div>
 
     <div class="var-card" id="bva-variances-card" style="display:none;margin-bottom:14px">
-      <div class="card-h">Top Variances<span class="meta" id="bva-var-meta"></span></div>
+      <div class="card-h" style="cursor:pointer;user-select:none" onclick="toggleTopVariances()">
+        <span id="bva-var-caret" style="display:inline-block;width:12px">▾</span> Top Variances<span class="meta" id="bva-var-meta"></span>
+      </div>
+      <div id="bva-var-summary" style="display:none;padding:10px 14px;border-top:1px solid var(--border);font-size:12.5px;color:var(--navy);display:none"></div>
       <div id="bva-variances-body"></div>
     </div>
 
     <div class="card" id="bva-card">
-      <div class="card-h">Budget vs Actual <span class="meta" id="period-label"></span></div>
+      <div class="card-h">Financial Performance <span class="meta" id="period-label"></span></div>
       <div class="bva-wrap" id="bva-wrap"><div class="spinner">Loading data…</div></div>
       <div class="var-save-bar" id="bva-cat-save-bar" style="display:none">
         <button class="var-save-btn" id="bva-cat-save-btn" onclick="saveBvaCatComments()">Save Comments</button>
@@ -1329,7 +1332,7 @@ function loadTab(slug){
   const allTabs = [...(MANIFEST.tabs||[])];
   const tab = allTabs.find(t => t.slug === slug);
   const titleBase = tab ? tab.name : slug;
-  document.getElementById('page-title').textContent = titleBase + ' — Budget vs Actuals';
+  document.getElementById('page-title').textContent = titleBase + ' — Financial Performance';
   document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Loading…</div>';
   STATE.trendFocus = null;
 
@@ -3849,11 +3852,11 @@ function renderCharts(){
   }
 
   const actCutoff = STATE.month || 12;
+  // Trend = Actuals, Plan (selected Compare A), and Prior Year — per Chandler's spec.
   const lineDatasets = [
     {label:'Actuals', data:focusedSeries(getActuals).map((v,i) => i < actCutoff ? v : null), borderColor:'#01323C', backgroundColor:'rgba(1,50,60,.1)', tension:.2, borderWidth:2.5, spanGaps:false},
-    {label:labelOf(STATE.cmpA), data:focusedSeries(a => effectiveSeries(a, STATE.cmpA)), borderColor:'#015047', backgroundColor:'rgba(1,80,71,.1)', borderDash:[5,3], tension:.2},
-    {label:labelOf(STATE.cmpB), data:focusedSeries(a => effectiveSeries(a, STATE.cmpB)), borderColor:'#BEB8A2', backgroundColor:'rgba(190,184,162,.1)', borderDash:[2,3], tension:.2},
-    {label:labelOf(STATE.cmpPY), data:focusedSeries(a => getSeries(a, STATE.cmpPY)), borderColor:'#75797D', backgroundColor:'rgba(117,121,125,.1)', borderDash:[1,3], tension:.2},
+    {label:'Plan (' + labelOf(STATE.cmpA) + ')', data:focusedSeries(a => effectiveSeries(a, STATE.cmpA)), borderColor:'#015047', backgroundColor:'rgba(1,80,71,.1)', borderDash:[5,3], tension:.2},
+    {label:'Prior Year', data:focusedSeries(a => getSeries(a, STATE.cmpPY)), borderColor:'#75797D', backgroundColor:'rgba(117,121,125,.1)', borderDash:[1,3], tension:.2},
   ];
   const lineCtx = document.getElementById('chart-line').getContext('2d');
   if (chartLine) chartLine.destroy();
@@ -6011,6 +6014,20 @@ function renderSummaryChart(d){
 // =====================================================================
 // OVERVIEW TAB — Rob's Scorecard
 // ===== BvA Tab — Top Variances with comments (per region) =====
+let TOPVAR_COLLAPSED = (() => { try { return localStorage.getItem('bva_topvar_collapsed') === '1'; } catch(e){ return false; } })();
+function toggleTopVariances(){
+  TOPVAR_COLLAPSED = !TOPVAR_COLLAPSED;
+  try { localStorage.setItem('bva_topvar_collapsed', TOPVAR_COLLAPSED ? '1' : '0'); } catch(e){}
+  applyTopVarCollapse();
+}
+function applyTopVarCollapse(){
+  const body = document.getElementById('bva-variances-body');
+  const summary = document.getElementById('bva-var-summary');
+  const caret = document.getElementById('bva-var-caret');
+  if (body) body.style.display = TOPVAR_COLLAPSED ? 'none' : '';
+  if (summary) summary.style.display = TOPVAR_COLLAPSED ? 'block' : 'none';
+  if (caret) caret.textContent = TOPVAR_COLLAPSED ? '▸' : '▾';
+}
 function renderBvaVariances(){
   const card = document.getElementById('bva-variances-card');
   if (!card || !DATA || !DATA.accounts) { if (card) card.style.display='none'; return; }
@@ -6046,9 +6063,14 @@ function renderBvaVariances(){
       }
       return tot;
     }
-    if (!byCat[cat]) byCat[cat] = { cat, actual: 0, forecast: 0 };
+    if (!byCat[cat]) byCat[cat] = { cat, actual: 0, forecast: 0, py: 0 };
     byCat[cat].actual += sumFm('actual', null);
     byCat[cat].forecast += sumFm('forecast', verKey);
+    { // prior-year same-month actuals (for the collapsed summary's "vs PY")
+      const cmPY = (a.actuals_by_company||{})[fy-1]||{};
+      if (effCo && effCo.size > 0) effCo.forEach(co => { const arr = cmPY[co]; if (arr) byCat[cat].py += (arr[fm-1]||0); });
+      else Object.values(cmPY).forEach(arr => { if (arr) byCat[cat].py += (arr[fm-1]||0); });
+    }
   });
   const top = Object.values(byCat).map(c => {
     const variance = c.actual - c.forecast;
@@ -6057,6 +6079,17 @@ function renderBvaVariances(){
 
   if (top.length === 0){ card.style.display='none'; return; }
   card.style.display = '';
+
+  // Collapsed summary: total Actuals vs Plan and vs Prior Year across all categories.
+  {
+    let tA=0, tP=0, tPY=0;
+    Object.values(byCat).forEach(c => { tA += c.actual; tP += c.forecast; tPY += (c.py||0); });
+    const vP = tA - tP, vPY = tA - tPY;
+    const clsP = vP > 0 ? 'unfav' : 'fav', clsPY = vPY > 0 ? 'unfav' : 'fav';
+    const sEl = document.getElementById('bva-var-summary');
+    if (sEl) sEl.innerHTML = `Actuals <b>${fmtUSD(tA)}</b> &nbsp;·&nbsp; vs Plan <b class="${clsP}">${fmtVar(vP, clsP)}</b> &nbsp;·&nbsp; vs Prior Year <b class="${clsPY}">${fmtVar(vPY, clsPY)}</b>`;
+    applyTopVarCollapse();
+  }
 
   const verShort = verKey.replace(/ \| FY\d+/,'');
   const meta = document.getElementById('bva-var-meta');
