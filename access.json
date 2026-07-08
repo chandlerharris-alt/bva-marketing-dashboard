@@ -44,6 +44,21 @@
         }
       },
       "versions": "*"
+    },
+    "nick.kriz@ifit.com": {
+      "admin": false,
+      "tabs": {
+        "marketing": {
+          "view": true
+        },
+        "media": {
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true
+        }
+      },
+      "versions": "*"
     }
   },
   "_default_for_unlisted_users": {
