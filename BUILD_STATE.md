@@ -87,4 +87,7 @@ Server-side OAuth (auth-code flow), per the employee's "one project, many client
 - Access model v2 now ENFORCES (per-tab caps + per-user versions) since `/api/me` returns the real user.
 - **REMAINING for saves to persist:** the GitHub-commit Functions (`/api/access`, `/api/categories`, `/api/comments`, `/api/version-config`, `/api/save-forecast`) need env vars **`GITHUB_TOKEN` (PAT, repo scope), `GITHUB_OWNER`=chandlerharris-alt, `GITHUB_REPO`=bva-marketing-dashboard** (+ optional `GITHUB_BRANCH`=main). Without them, admin "Save" → 500 server_misconfigured (auth works, but changes don't persist to the shared file). Set these next to make Save Users/Categories/Comments/Versions write through for everyone.
 
-## Git: latest commit `5c6d847` (force redeploy to bind auth env vars). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
+## API auth aligned to access v2 (2026-07-08)
+All `/api/*` write Functions had bespoke checks against the OLD `role`/`slugs` fields → admins got 403 on the migrated `{admin,tabs,versions}` schema. Added shared **`functions/_access.js`** (`getAccess`/`isAdmin`/`can(slug,cap)`/`canSee` + old→new migration, mirrors me.js) and rewired every function: access.js/version-config.js/overrides/approve → `isAdmin`; categories → `can 'tag'`; comments → `can 'comment'`; save-forecast/overrides → `can 'forecast'`; audit → `isAdmin`/`canSee`. Per-tab capability model now enforced server-side too. GitHub-commit env vars (`GITHUB_TOKEN`/`GITHUB_OWNER`=chandlerharris-alt/`GITHUB_REPO`=bva-marketing-dashboard) are set → saves persist.
+
+## Git: latest commit `2cbd803` (API auth → v2 schema). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
