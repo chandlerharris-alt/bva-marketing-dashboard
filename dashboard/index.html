@@ -9040,7 +9040,9 @@ function applyAuthToUi(){
   const badge = document.getElementById('user-badge');
   if (badge){
     badge.style.display = '';
-    badge.textContent = `${AUTH_STATE.email || ''}${AUTH_STATE.admin ? ' · admin' : ''}`;
+    // "Sign out" only once real Google auth is live (not the pre-gate local fallback).
+    const signout = AUTH_STATE._local ? '' : ` &nbsp;<a href="/auth/logout" style="color:inherit;opacity:.8;text-decoration:underline">Sign out</a>`;
+    badge.innerHTML = `${AUTH_STATE.email || ''}${AUTH_STATE.admin ? ' · admin' : ''}${signout}`;
   }
   const adminWrap = document.getElementById('sb-admin-wrap');
   if (adminWrap) adminWrap.style.display = AUTH_STATE.admin ? '' : 'none';
