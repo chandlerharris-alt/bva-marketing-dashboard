@@ -1619,8 +1619,10 @@ function setupComparisonPickers(){
   const cmpBEl = document.getElementById('cmp-b');
   const fyTag = 'FY' + (fy - 2000);
   fill(cmpBEl, versionOpts);
-  const aopPick = versionOpts.find(o => /AOP/i.test(o.label) && o.label.startsWith(fyTag))
-    || versionOpts.find(o => /AOP Final/.test(o.label))
+  const aopPick =
+       versionOpts.find(o => o.label.startsWith(fyTag) && /AOP\s*Final/i.test(o.label))  // FY's own AOP Final
+    || versionOpts.find(o => o.label.startsWith(fyTag) && /AOP/i.test(o.label))           // FY's own any AOP
+    || versionOpts.find(o => /AOP Final/i.test(o.label))
     || versionOpts.find(o => /AOP/i.test(o.label));
   if (aopPick) cmpBEl.value = aopPick.value;
   fill(document.getElementById('cmp-py'), pyOptions.length ? pyOptions : versionOpts);

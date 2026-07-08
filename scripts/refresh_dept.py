@@ -53,7 +53,9 @@ ALLOWED_VERSIONS = {
     "FY25: 7+5",
     "FY25: 10+2",
     # FY27
-    "FY27 AOP v5.5.26",
+    "FY27: AOP Final",     # finalized FY27 AOP — RPT revenue normaliser also emits this
+                           # name, so OPEX + hardware revenue combine under one version key
+    "FY27 AOP v5.5.26",    # last working draft before Final (kept for draft-vs-final compare)
     "Working Forecast",
     # EBITDA addbacks-only:
     "Proforma Adjustments",
