@@ -7099,7 +7099,27 @@ function _ucRefreshAfterAssign(){
   const openAcct = wrapEl ? wrapEl.querySelector('tr.acct-row.open[data-acct]') : null;
   if (openAcct){
     const a = accounts.find(x => x.reporting_account === openAcct.dataset.acct);
-    if (a){ removeDrillRows(wrapEl, openAcct.dataset.acct); insertDrillCats(openAcct, a); return; }
+    if (a){
+      // Preserve which categories/buckets were expanded so a tag/re-tag doesn't collapse the
+      // view the user is looking at — otherwise every assignment kicks them back to the top.
+      const acctSel = openAcct.dataset.acct;
+      const escA = (window.CSS && CSS.escape) ? CSS.escape(acctSel) : acctSel;
+      const openCatIds = Array.from(wrapEl.querySelectorAll(`tr.drill-cat-row.open[data-acct="${escA}"]`)).map(r => r.dataset.catid);
+      const openSrcKeys = Array.from(wrapEl.querySelectorAll(`tr.drill-src-row.open[data-acct="${escA}"]`)).map(r => ({catid:r.dataset.catid, src:r.dataset.src}));
+      removeDrillRows(wrapEl, acctSel);
+      insertDrillCats(openAcct, a);
+      openCatIds.forEach(catid => {
+        const escC = (window.CSS && CSS.escape) ? CSS.escape(catid) : catid;
+        const row = wrapEl.querySelector(`tr.drill-cat-row[data-acct="${escA}"][data-catid="${escC}"]`);
+        if (row) toggleDrillCat(row);
+      });
+      openSrcKeys.forEach(({catid, src}) => {
+        const escC = (window.CSS && CSS.escape) ? CSS.escape(catid) : catid;
+        const row = wrapEl.querySelector(`tr.drill-src-row[data-acct="${escA}"][data-catid="${escC}"][data-src="${src}"]`);
+        if (row) toggleDrillSrc(row);
+      });
+      return;
+    }
   }
   const expRow = document.querySelector('tr.expansion-row[data-acct]');
   if (!expRow){ if (typeof render === 'function') render(); return; }
