@@ -3121,8 +3121,11 @@ function buildMediaGrid(){
   const acctV = a => [rollup(getActuals(a)), rollup(effectiveSeries(a,STATE.cmpA)), rollup(effectiveSeries(a,STATE.cmpB)), rollup(getSeries(a,STATE.cmpPY))];
   const rev = sumV(revAccts), paid = sumV(paidAccts), nonpaid = sumV(nonpaidAccts);
   const totAdv = {actual:paid.actual+nonpaid.actual, a:paid.a+nonpaid.a, b:paid.b+nonpaid.b, py:paid.py+nonpaid.py};
-  // Gross Revenue Actual + PY come from ADAPTIVE_GL_PL_ACTUALS (recognized, USD, incl subscription) —
-  // this is the Excel's source and avoids the FX/deferred-subscription issues of the raw GL accounts.
+  // Gross Revenue Actual comes from ADAPTIVE_GL_PL_ACTUALS (Adaptive recognized P&L, incl
+  // subscription) — the Excel's source. NOTE: that table is LOCAL currency, so we FX-convert
+  // per company/month exactly like the actuals path (USD = local / rate). Verified to tie the
+  // Excel Global Summary gross revenue within ~0.6%. Falls back to the RPT/GL-account figure
+  // for any year the table lacks (it only carries FY26+, so PY still comes from the old source).
   // (AOP/8+4 forecast revenue stays on RPT — that table is hardware-only; subscription forecast is still a gap.)
   {
     const RGP = (DATA.meta && DATA.meta.rev_gl_pl) || {};
@@ -3137,13 +3140,16 @@ function buildMediaGrid(){
         let t = 0;
         selDisp.forEach(d => { const byCo = RGP[d] || {}; Object.entries(byCo).forEach(([co, byFy]) => {
           if (effCo && !effCo.has(String(co))) return;
-          const arr = byFy[String(fy)]; if (arr) t += rollup(arr);
+          const arr = byFy[String(fy)]; if (!arr) return;
+          // ADAPTIVE_GL_PL_ACTUALS is local currency — convert to USD per month like actuals.
+          const conv = arr.map((v, i) => { const r = fxRate(co, fy, i + 1); return (STATE.currency === 'USD' && r) ? v / r : v; });
+          t += rollup(conv);
         }); });
         return t;
       };
-      rev.actual = glplRev(STATE.fy);
+      const _ga = glplRev(STATE.fy); if (_ga) rev.actual = _ga;
       const _pyY = String(STATE.cmpPY||'').startsWith('ACTUALS_FY') ? +String(STATE.cmpPY).slice(10) : (STATE.fy - 1);
-      rev.py = glplRev(_pyY);
+      const _gp = glplRev(_pyY); if (_gp) rev.py = _gp;
     }
   }
 
