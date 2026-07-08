@@ -1181,6 +1181,16 @@ function loadVersionVisibility(){
     .catch(() => { VERSION_HIDDEN = new Set(); });
 }
 
+// FY27 AOP revenue (channel -> region -> 12 fiscal months, USD) — the Plan/AOP revenue on the
+// Media tab. Source: data/rev_aop_fy27.json (built from the Global Revenue by Region & Channel AOP).
+let REV_AOP = null;
+function loadRevAop(){
+  return fetch('../data/rev_aop_fy27.json', {cache:'no-store'})
+    .then(r => r.ok ? r.json() : null).catch(() => null)
+    .then(cfg => { REV_AOP = (cfg && cfg.byChannelRegion) ? cfg.byChannelRegion : null; })
+    .catch(() => { REV_AOP = null; });
+}
+
 // ===== Bootstrap =====
 // First load optional domain config (overrides SECTION_CHILDREN, DIRECT_REPORTS, IMPLICIT_DEPT_SCOPE)
 // so each domain (logistics, marketing, mfg-quality, sop, procurement) can customise
@@ -1202,7 +1212,7 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
         if (t) t.textContent = cfg.brand_label;
       }
     }
-    return loadVersionVisibility().then(() =>
+    return Promise.all([loadVersionVisibility(), loadRevAop()]).then(() =>
       fetch('../data/manifest.json', {cache:'no-store'}).then(r => r.json()));
   })
   .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); })
@@ -3229,6 +3239,35 @@ function buildMediaGrid(){
       const _ga = glplRev(STATE.fy); if (_ga) rev.actual = _ga;
       const _pyY = String(STATE.cmpPY||'').startsWith('ACTUALS_FY') ? +String(STATE.cmpPY).slice(10) : (STATE.fy - 1);
       const _gp = glplRev(_pyY); if (_gp) rev.py = _gp;
+    }
+  }
+  // FY27 AOP revenue Plan — from data/rev_aop_fy27.json (channel x region x 12 fiscal months, USD).
+  // The RPT forecast is hardware-only, so when FY27 AOP is the selected Plan version we replace the
+  // Plan revenue (and thus every Plan "% of Revenue" denominator) with the real AOP top-line, summed
+  // over the selected display channels x regions and rolled up to the current period window.
+  if (REV_AOP && STATE.fy === 2027){
+    const planLbl = (typeof labelOf === 'function' ? labelOf(STATE.cmpA) : String(STATE.cmpA || ''));
+    if (/FY27/.test(planLbl) && /AOP/i.test(planLbl)){
+      const selDispA = MKTG_DISPLAY_CHANNELS.filter(d => {
+        if (!STATE.selectedChannels) return true;
+        const raws = mktgRawChannels().filter(r => mktgNormChannel(r) === d);
+        return raws.length ? raws.every(r => STATE.selectedChannels.has(r)) : true;
+      });
+      const effCoA = effectiveCompanySet();
+      // A region contributes its AOP when any of its companies is in the effective set (region
+      // buttons toggle all of a region's companies at once; AOP is only broken out to region
+      // granularity, so a partial company selection still lights up the whole region).
+      const regOn = reg => {
+        const cos = (MEDIA_REGION_COMPANIES[reg] || []).map(String);
+        return !effCoA || cos.some(c => effCoA.has(c));
+      };
+      const regions = MEDIA_REGION_ORDER.filter(regOn);
+      const arr = new Array(12).fill(0);
+      selDispA.forEach(ch => { const byReg = REV_AOP[ch] || {}; regions.forEach(rg => {
+        const m = byReg[rg]; if (m) for (let i = 0; i < 12; i++) arr[i] += (+m[i] || 0);
+      }); });
+      const t = rollup(arr);
+      if (t) rev.a = t;
     }
   }
 
