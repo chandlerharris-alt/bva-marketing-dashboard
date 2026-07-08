@@ -14,3 +14,6 @@ logs/
 
 # Throwaway diagnostic / one-off scripts (prefixed with underscore)
 scripts/_*.py
+
+# Throwaway diagnostic data dumps (must not be auto-committed by daily refresh)
+data/_*.json
