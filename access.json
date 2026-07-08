@@ -3,8 +3,38 @@
   "_last_updated": "2026-07-08",
   "_last_updated_by": "chandler.harris@ifit.com",
   "users": {
-    "chandler.harris@ifit.com": { "admin": true, "tabs": {}, "versions": "*" },
-    "devin.lindsay@ifit.com":   { "admin": true, "tabs": {}, "versions": "*" }
+    "chandler.harris@ifit.com": {
+      "admin": true,
+      "tabs": {},
+      "versions": "*"
+    },
+    "devin.lindsay@ifit.com": {
+      "admin": true,
+      "tabs": {},
+      "versions": "*"
+    },
+    "michael.doran@ifit.com": {
+      "admin": false,
+      "tabs": {
+        "marketing": {
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true
+        },
+        "media": {
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true
+        }
+      },
+      "versions": "*"
+    }
   },
-  "_default_for_unlisted_users": { "admin": false, "tabs": {}, "versions": "*" }
+  "_default_for_unlisted_users": {
+    "admin": false,
+    "tabs": {},
+    "versions": "*"
+  }
 }
