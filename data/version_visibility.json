@@ -1,0 +1,5 @@
+{
+  "_comment": "Base forecast-version names HIDDEN from the dashboard Compare dropdowns (AOP / 8+4 / prior-period). Empty = all versions visible. New cuts default to visible. Edit via Admin > Forecast Versions.",
+  "_last_updated": "2026-07-08",
+  "hidden": []
+}

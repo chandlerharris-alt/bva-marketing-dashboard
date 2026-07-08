@@ -1142,6 +1142,24 @@ function currentFyFm(dateOverride){
   return { fy, fm, label };
 }
 
+// ===== Forecast-version visibility (admin-curated) =====
+// Admins pick which forecast versions appear in the Compare dropdowns (Admin > Forecast
+// Versions). Stored as a list of HIDDEN base version names (so new cuts default to visible)
+// in data/version_visibility.json (global, readable without auth) with a per-browser
+// localStorage override for instant effect before the shared file is committed.
+let VERSION_HIDDEN = new Set();
+function baseVersion(v){ return String(v).replace(/\s*\|\s*FY\d{4}\s*$/, ''); }
+function loadVersionVisibility(){
+  return fetch('../data/version_visibility.json', {cache:'no-store'})
+    .then(r => r.ok ? r.json() : null).catch(() => null)
+    .then(cfg => {
+      let hidden = (cfg && Array.isArray(cfg.hidden)) ? cfg.hidden : [];
+      try { const s = localStorage.getItem('bva_hidden_versions'); if (s){ const arr = JSON.parse(s); if (Array.isArray(arr)) hidden = arr; } } catch(e){}
+      VERSION_HIDDEN = new Set(hidden.map(baseVersion));
+    })
+    .catch(() => { VERSION_HIDDEN = new Set(); });
+}
+
 // ===== Bootstrap =====
 // First load optional domain config (overrides SECTION_CHILDREN, DIRECT_REPORTS, IMPLICIT_DEPT_SCOPE)
 // so each domain (logistics, marketing, mfg-quality, sop, procurement) can customise
@@ -1163,7 +1181,8 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
         if (t) t.textContent = cfg.brand_label;
       }
     }
-    return fetch('../data/manifest.json', {cache:'no-store'}).then(r => r.json());
+    return loadVersionVisibility().then(() =>
+      fetch('../data/manifest.json', {cache:'no-store'}).then(r => r.json()));
   })
   .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); })
   .catch(err => { document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Failed to load manifest: '+err+'</div>'; });
@@ -1579,7 +1598,9 @@ function setupComparisonPickers(){
   const fy = STATE.fy;
   const wantSuffix = `| FY${fy}`;
   const versions = (DATA.meta.available_versions || []).filter(v => v.endsWith(wantSuffix));
-  const versionOpts = versions.map(v => ({value:v, label:v.replace(' | FY' + fy, '')}));
+  // Hide versions the admin curated out (Admin > Forecast Versions); never leave the picker empty.
+  const shown = VERSION_HIDDEN.size ? versions.filter(v => !VERSION_HIDDEN.has(baseVersion(v))) : versions;
+  const versionOpts = (shown.length ? shown : versions).map(v => ({value:v, label:v.replace(' | FY' + fy, '')}));
 
   const pyOptions = DATA.meta.fy_in_actuals.filter(f => f < fy)
     .sort((a,b) => b - a)
@@ -9314,6 +9335,28 @@ function renderAdmin(access){
       <td><button class="btn-sm" onclick="adminRemoveRow(${idx})">&#10005;</button></td>
     </tr>
   `).join('');
+  const allBase = [...new Set(((typeof DATA!=='undefined' && DATA && DATA.meta && DATA.meta.available_versions) || []).map(baseVersion))].sort();
+  const verChips = allBase.length
+    ? allBase.map(b => `<label class="adm-chip ${!VERSION_HIDDEN.has(b)?'on':''}"><input type="checkbox" data-ver="${b.replace(/"/g,'&quot;')}" ${!VERSION_HIDDEN.has(b)?'checked':''}> ${b}</label>`).join('')
+    : '<span style="font-size:12px;color:var(--gray)">Open any data tab once, then return here to load the version list.</span>';
+  const versionsCard = `
+    <div class="card" style="max-width:1200px;margin-top:16px">
+      <div class="card-h">Forecast Versions
+        <span class="meta">Check the versions people can pick in the Compare dropdowns. Unchecked = hidden everywhere.</span>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+          <button class="btn-sm" onclick="adminVersionsToggleAll(true)">Select all</button>
+          <button class="btn-sm" onclick="adminVersionsToggleAll(false)">Clear all</button>
+          <button class="btn-sm btn-primary" onclick="adminSaveVersions()">Save Versions</button>
+          <span id="adm-ver-status" style="font-size:12px;color:var(--gray)"></span>
+        </div>
+        <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${verChips}</div>
+        <p style="font-size:11px;color:var(--gray);margin-top:14px">
+          Applies to the AOP / 8+4 / prior-period pickers on every tab. Saved to your browser instantly; a global save for all users uses the same sign-in gate as comments.
+        </p>
+      </div>
+    </div>`;
   admin.innerHTML = `
     <div class="card" style="max-width:1200px">
       <div class="card-h">User Access
@@ -9336,6 +9379,7 @@ function renderAdmin(access){
         </p>
       </div>
     </div>
+    ${versionsCard}
   `;
   admin.querySelectorAll('[data-slug-all]').forEach(cb => {
     cb.onchange = () => {
@@ -9348,6 +9392,36 @@ function renderAdmin(access){
       });
     };
   });
+  admin.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
+    cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
+  });
+}
+function adminVersionsToggleAll(on){
+  document.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
+    cb.checked = on; cb.closest('.adm-chip').classList.toggle('on', on);
+  });
+}
+async function adminSaveVersions(){
+  const status = document.getElementById('adm-ver-status');
+  const boxes = [...document.querySelectorAll('#adm-ver-list input[data-ver]')];
+  const hidden = boxes.filter(cb => !cb.checked).map(cb => cb.dataset.ver);
+  // Instant, per-browser effect + live app state.
+  try { localStorage.setItem('bva_hidden_versions', JSON.stringify(hidden)); } catch(e){}
+  VERSION_HIDDEN = new Set(hidden.map(baseVersion));
+  if (status) status.textContent = 'Saved to this browser ✓';
+  // Global save commits data/version_visibility.json via GitHub — needs the sign-in gate.
+  try {
+    const res = await fetch('/api/version-config', {
+      method:'POST', credentials:'include',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ hidden }),
+    });
+    if (status) status.textContent = res.ok
+      ? 'Saved for all users ✓ ' + new Date().toLocaleTimeString()
+      : 'Saved to this browser ✓ (global sync needs sign-in gate — HTTP ' + res.status + ')';
+  } catch(e){
+    if (status) status.textContent = 'Saved to this browser ✓ (global sync unavailable)';
+  }
 }
 function buildAllSlugList(){
   const out = [];
