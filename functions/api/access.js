@@ -30,8 +30,9 @@ export const onRequestPost = async (context) => {
   }
 
   const meAfter = body.users[user.email.toLowerCase()] || body.users[user.email];
-  if (!meAfter || meAfter.role !== 'admin'){
-    return json({ error: 'self_lockout', detail: 'admins must keep their own admin role' }, 400);
+  const stillAdmin = meAfter && (meAfter.admin === true || meAfter.role === 'admin');
+  if (!stillAdmin){
+    return json({ error: 'self_lockout', detail: 'admins must keep their own admin access' }, 400);
   }
 
   const env = context.env || {};

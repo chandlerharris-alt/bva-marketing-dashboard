@@ -1,16 +1,14 @@
 // GET /api/me
-// Returns the authenticated user's identity + which sidebar slugs they can access.
-// Reads access.json from the deployed bundle (it's part of the Pages build output).
+// Returns the authenticated user's identity + per-tab capabilities + version allow-list.
+// Reads access.json from the deployed bundle. Identity comes from context.data.user, set by
+// functions/_middleware.js (Google sign-in). Until that gate is wired, this 401s and the
+// client falls back to full local access.
 export const onRequestGet = async (context) => {
-  const { user } = context.data;
+  const { user } = context.data || {};
   if (!user || !user.email){
-    return new Response(JSON.stringify({ error: 'unauthenticated' }), {
-      status: 401, headers: { 'content-type': 'application/json' }
-    });
+    return json({ error: 'unauthenticated' }, 401);
   }
 
-  // Pages serves static assets via context.env.ASSETS — fetch access.json
-  // that's bundled with the deploy.
   let access = null;
   try {
     const url = new URL(context.request.url);
@@ -20,17 +18,35 @@ export const onRequestGet = async (context) => {
   } catch(e){ /* fall through to default */ }
 
   const users = (access && access.users) || {};
-  const fallback = (access && access._default_for_unlisted_users) || { slugs: [], role: 'denied' };
-  const entry = users[user.email.toLowerCase()] || users[user.email] || fallback;
+  const fallback = (access && access._default_for_unlisted_users) || null;
+  const raw = users[user.email.toLowerCase()] || users[user.email] || fallback;
+  const norm = normalizeEntry(raw);
 
-  // Normalize: slugs can be "*" (all) or string[]. Return as either ["*"] or the array.
-  const allowedSlugs = entry.slugs === '*' ? ['*'] : (entry.slugs || []);
-  const role = entry.role || (allowedSlugs.length ? 'viewer' : 'denied');
-
-  return new Response(JSON.stringify({
+  return json({
     email: user.email,
-    role,
-    allowedSlugs,
-    canEdit: role === 'admin' || role === 'editor',
-  }), { headers: { 'content-type': 'application/json' } });
+    admin: norm.admin,
+    tabs: norm.tabs,
+    versions: norm.versions,
+  });
 };
+
+// Migrate old {role, slugs} entries to the new {admin, tabs, versions} shape.
+function normalizeEntry(entry){
+  if (!entry) return { admin:false, tabs:{}, versions:'*' };
+  if (entry.tabs || entry.admin !== undefined){
+    return { admin: !!entry.admin, tabs: entry.tabs || {}, versions: entry.versions || '*' };
+  }
+  const role = entry.role || 'denied';
+  if (role === 'admin') return { admin:true, tabs:{ '*':{view:true,tag:true,comment:true,forecast:true} }, versions:'*' };
+  const caps = role === 'editor' ? {view:true,tag:true,comment:true,forecast:true}
+             : role === 'viewer' ? {view:true} : null;
+  if (!caps) return { admin:false, tabs:{}, versions:'*' };
+  const tabs = {};
+  if (entry.slugs === '*') tabs['*'] = caps;
+  else (entry.slugs || []).forEach(s => { tabs[s] = caps; });
+  return { admin:false, tabs, versions:'*' };
+}
+
+function json(obj, status=200){
+  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+}

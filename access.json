@@ -1,14 +1,10 @@
 {
-  "_comment": "Per-user access control for the Marketing BvA dashboard. Email -> allowed slugs + role. '*' = all tabs. Roles: admin (edit access.json + everything), editor (save comments/categories/forecast), viewer (read-only). Cloudflare Access already gates to @ifit.com; this controls per-user roles. Email matching is case-insensitive.",
-  "_last_updated": "2026-06-09",
+  "_comment": "Per-user access for the Marketing BvA dashboard. Each user: { admin? , tabs, versions }. admin=true grants full access + manage-access. tabs maps slug -> capabilities {view,tag,comment,forecast}; '*' is the default for all tabs; a tab with no entry is hidden. versions is '*' (all) or an array of base version names the user may compare. Managed via Admin > User Access. Email matching is case-insensitive.",
+  "_last_updated": "2026-07-08",
   "_last_updated_by": "chandler.harris@ifit.com",
   "users": {
-    "chandler.harris@ifit.com": { "slugs": "*", "role": "admin" },
-    "devin.lindsay@ifit.com":   { "slugs": "*", "role": "admin" },
-    "<<marketing-head@ifit.com>>": { "slugs": "*", "role": "editor" }
+    "chandler.harris@ifit.com": { "admin": true, "tabs": {}, "versions": "*" },
+    "devin.lindsay@ifit.com":   { "admin": true, "tabs": {}, "versions": "*" }
   },
-  "_default_for_unlisted_users": {
-    "slugs": [],
-    "role": "denied"
-  }
+  "_default_for_unlisted_users": { "admin": false, "tabs": {}, "versions": "*" }
 }

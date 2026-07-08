@@ -1076,7 +1076,25 @@ const STATE = {
 let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null };
 const FC_EXCLUDE_ACCTS = new Set(['6755000','5715000','5715200','5500056','5500057','7855000','7855000C','8925000C','9700000','5561000','5575000','5655000','5772000','6105000','8970000']);
 let SAVE_STATE = { dirty:false, lastSavedAt:null };
-let AUTH_STATE = { email:null, role:'denied', allowedSlugs:[], canEdit:false, loaded:false };
+// Per-user access: admin flag, per-tab capabilities {view,tag,comment,forecast} keyed by
+// slug ('*' = default for all tabs), and a plan-version allow-list ('*' = all).
+let AUTH_STATE = { email:null, admin:false, tabs:{}, versions:'*', loaded:false };
+// Shared old->new schema migration (mirrors normalizeEntry() in functions/api/me.js).
+function normalizeAccessEntry(entry){
+  if (!entry) return { admin:false, tabs:{}, versions:'*' };
+  if (entry.tabs || entry.admin !== undefined){
+    return { admin: !!entry.admin, tabs: entry.tabs || {}, versions: entry.versions || '*' };
+  }
+  const role = entry.role || 'denied';
+  if (role === 'admin') return { admin:true, tabs:{ '*':{view:true,tag:true,comment:true,forecast:true} }, versions:'*' };
+  const caps = role === 'editor' ? {view:true,tag:true,comment:true,forecast:true}
+             : role === 'viewer' ? {view:true} : null;
+  if (!caps) return { admin:false, tabs:{}, versions:'*' };
+  const tabs = {};
+  if (entry.slugs === '*') tabs['*'] = caps;
+  else (entry.slugs || []).forEach(s => { tabs[s] = caps; });
+  return { admin:false, tabs, versions:'*' };
+}
 
 // FX helpers — rates are stored as local-per-USD. Divide local by rate to get USD.
 function fxRate(coCode, fy, fm){
@@ -1598,8 +1616,9 @@ function setupComparisonPickers(){
   const fy = STATE.fy;
   const wantSuffix = `| FY${fy}`;
   const versions = (DATA.meta.available_versions || []).filter(v => v.endsWith(wantSuffix));
-  // Hide versions the admin curated out (Admin > Forecast Versions); never leave the picker empty.
-  const shown = VERSION_HIDDEN.size ? versions.filter(v => !VERSION_HIDDEN.has(baseVersion(v))) : versions;
+  // Hide versions the admin curated out globally (VERSION_HIDDEN) AND versions this user isn't
+  // allowed to compare (per-user allow-list); never leave the picker empty.
+  const shown = versions.filter(v => { const b = baseVersion(v); return !VERSION_HIDDEN.has(b) && authVersionAllowed(b); });
   const versionOpts = (shown.length ? shown : versions).map(v => ({value:v, label:v.replace(' | FY' + fy, '')}));
 
   const pyOptions = DATA.meta.fy_in_actuals.filter(f => f < fy)
@@ -4760,7 +4779,7 @@ function renderForecastPane(){
 
   const isEditor = (STATE.fcSubTab === 'opex' || STATE.fcSubTab === 'cl');
   const isWorkingForecast = versionName === 'Working Forecast';
-  const canEdit = isEditor && isWorkingForecast;
+  const canEdit = isEditor && isWorkingForecast && authCan(ACTIVE_SLUG, 'forecast');
 
   const sourceMap = { opex:'PLANNING_GENERAL', cl:'CONTRACT_LABOR' };
   const src = sourceMap[STATE.fcSubTab] || 'PLANNING_GENERAL';
@@ -8941,30 +8960,57 @@ function renderCalendar(){
 // AUTH + SAVE-TO-SERVER
 // =====================================================================
 async function initAuth(){
+  // No sign-in gate wired yet (Google auth pending Client ID) -> /api/me 401s and we fall
+  // back to full local access so the app is usable. Once the Google gate + middleware are on,
+  // /api/me returns the real {email, admin, tabs, versions} and these permissions enforce.
+  const FALLBACK = { email:'local-dev@example.com', admin:true,
+    tabs:{ '*':{view:true,tag:true,comment:true,forecast:true} }, versions:'*', loaded:true, _local:true };
   try {
-    const res = await fetch('/api/me', { credentials: 'include', cache: 'no-store' });
+    const res = await fetch('/api/me', { credentials:'include', cache:'no-store' });
     if (res.ok){
       const me = await res.json();
-      AUTH_STATE = Object.assign(AUTH_STATE, me, { loaded:true });
-    } else {
-      AUTH_STATE = { email:'local-dev@example.com', role:'admin', allowedSlugs:['*'], canEdit:true, loaded:true, _local:true };
-    }
-  } catch(e){
-    AUTH_STATE = { email:'local-dev@example.com', role:'admin', allowedSlugs:['*'], canEdit:true, loaded:true, _local:true };
-  }
+      AUTH_STATE = { email: me.email||null, admin: !!me.admin, tabs: me.tabs||{}, versions: me.versions||'*', loaded:true };
+    } else { AUTH_STATE = FALLBACK; }
+  } catch(e){ AUTH_STATE = FALLBACK; }
   applyAuthToUi();
 }
+// Effective capabilities for a tab: '*' default merged with the slug-specific entry.
+function authTabCaps(slug){
+  if (AUTH_STATE.admin) return { view:true, tag:true, comment:true, forecast:true };
+  const t = AUTH_STATE.tabs || {};
+  return Object.assign({}, t['*']||{}, t[slug]||{});
+}
+function authIsAdmin(){ return !!AUTH_STATE.admin; }
+function authCan(slug, cap){
+  if (!AUTH_STATE.loaded) return true;
+  if (AUTH_STATE.admin) return true;
+  return !!authTabCaps(slug)[cap];
+}
+function authCanSee(slug){
+  if (!AUTH_STATE.loaded) return true;
+  if (AUTH_STATE.admin) return true;
+  const c = authTabCaps(slug);
+  return !!(c.view || c.tag || c.comment || c.forecast);
+}
+function authVersionAllowed(baseVer){
+  if (!AUTH_STATE.loaded || AUTH_STATE.admin) return true;
+  const v = AUTH_STATE.versions;
+  if (v === '*' || !Array.isArray(v) || v.length === 0) return true;
+  return v.includes(baseVer);
+}
+// Legacy shims (older call sites).
+function authCanSeeSlug(slug){ return authCanSee(slug); }
+function authCanEdit(){ return authCan(ACTIVE_SLUG, 'tag') || authCan(ACTIVE_SLUG, 'forecast'); }
 function applyAuthToUi(){
-  const isGranted = AUTH_STATE.role && AUTH_STATE.role !== 'denied'
-                 && AUTH_STATE.allowedSlugs && AUTH_STATE.allowedSlugs.length > 0;
+  const isGranted = AUTH_STATE.admin || (MANIFEST?.tabs||[]).some(t => authCanSee(t.slug));
   if (!isGranted){ renderAccessDenied(); return; }
   const badge = document.getElementById('user-badge');
   if (badge){
     badge.style.display = '';
-    badge.textContent = `${AUTH_STATE.email || ''}${AUTH_STATE.role !== 'viewer' ? ' · '+AUTH_STATE.role : ''}`;
+    badge.textContent = `${AUTH_STATE.email || ''}${AUTH_STATE.admin ? ' · admin' : ''}`;
   }
   const adminWrap = document.getElementById('sb-admin-wrap');
-  if (adminWrap) adminWrap.style.display = AUTH_STATE.role === 'admin' ? '' : 'none';
+  if (adminWrap) adminWrap.style.display = AUTH_STATE.admin ? '' : 'none';
   filterSidebarByAccess();
 }
 function renderAccessDenied(){
@@ -8999,14 +9045,6 @@ function renderAccessDenied(){
     <button onclick="location.reload()" style="padding:7px 16px;border:1px solid var(--border);background:#fff;border-radius:5px;color:var(--navy);font-size:12px;cursor:pointer">Refresh after access is granted</button>
   `;
 }
-function authCanSeeSlug(slug){
-  if (!AUTH_STATE.loaded) return true;
-  const a = AUTH_STATE.allowedSlugs;
-  if (!a || !a.length) return false;
-  if (a.includes('*')) return true;
-  return a.includes(slug);
-}
-function authCanEdit(){ return !!AUTH_STATE.canEdit; }
 function filterSidebarByAccess(){
   if (!AUTH_STATE.loaded) return;
   const wraps = document.querySelectorAll('.manifest-tab-wrap');
@@ -9023,7 +9061,7 @@ function updateSaveButton(){
   if (!btn) return;
   const lbl = document.getElementById('save-forecast-label');
   const onEditor = (STATE.viewMode === 'forecast') && (STATE.fcSubTab === 'opex' || STATE.fcSubTab === 'cl' || STATE.fcSubTab === 'te');
-  const canEdit = authCanEdit() && (FORECAST_STATE.versionName === 'Working Forecast');
+  const canEdit = authCan(ACTIVE_SLUG, 'forecast') && (FORECAST_STATE.versionName === 'Working Forecast');
   btn.style.display = (onEditor && canEdit) ? '' : 'none';
   btn.disabled = !SAVE_STATE.dirty;
   btn.classList.toggle('dirty', SAVE_STATE.dirty);
@@ -9047,7 +9085,7 @@ function updateSaveButton(){
 });
 async function saveForecastToServer(){
   if (!SAVE_STATE.dirty) return;
-  if (!authCanEdit()){ alert('Read-only access.'); return; }
+  if (!authCan(ACTIVE_SLUG, 'forecast')){ alert('You do not have Forecast-edit access on this tab.'); return; }
   const slug = ACTIVE_SLUG;
   const src = STATE.fcSubTab === 'cl' ? 'CONTRACT_LABOR'
             : STATE.fcSubTab === 'te' ? 'TRAVEL_ENT'
@@ -9098,13 +9136,13 @@ function updateCategoriesSaveButton(){
   const slug = ACTIVE_SLUG;
   const dirty = isCategoriesDirty(slug);
   const onBva = STATE.viewMode === 'bva';
-  const canEdit = AUTH_STATE.canEdit;
+  const canEdit = authCan(ACTIVE_SLUG, 'tag');
   btn.style.display = (onBva && dirty && canEdit) ? '' : 'none';
 }
 async function saveCategoriesToServer(){
   const slug = ACTIVE_SLUG;
   if (!slug || !isCategoriesDirty(slug)) return;
-  if (AUTH_STATE.loaded && !AUTH_STATE.canEdit){ alert('Read-only access.'); return; }
+  if (!authCan(ACTIVE_SLUG, 'tag')){ alert('You do not have Tag-edit access on this tab.'); return; }
   const data = typeof loadUserCategories === 'function' ? loadUserCategories(slug) : { categories:[], descToCategory:{}, descToCategoryByAcct:{} };
   const btn = document.getElementById('save-categories-btn');
   const lbl = document.getElementById('save-categories-label');
@@ -9192,6 +9230,7 @@ function setVarianceCommentLocal(account, fm, text){
 async function saveVarianceComments(fy, fm, statusElId, btnElId){
   const dirtyKeys = Object.keys(VARIANCE_COMMENTS.dirty);
   if (dirtyKeys.length === 0) return { saved: 0, failed: 0 };
+  if (!authCan(ACTIVE_SLUG, 'comment')){ alert('You do not have Comment access on this tab.'); return { saved: 0, failed: 0 }; }
   const statusEl = document.getElementById(statusElId || 'var-save-status') || document.getElementById('bva-cat-save-status');
   const btn = document.getElementById(btnElId || 'var-save-btn') || document.getElementById('bva-cat-save-btn');
   if (btn) btn.disabled = true;
@@ -9270,7 +9309,7 @@ function computeTopVariances(data, fy, verKey, throughFm, ovView, limit){
 // ADMIN PAGE — manage access.json
 // =====================================================================
 async function loadAdmin(){
-  if (AUTH_STATE.role !== 'admin'){ alert('Admin role required.'); return; }
+  if (!authIsAdmin()){ alert('Admin role required.'); return; }
   STATE.viewMode = 'admin';
   ['bva-body','contacts-view','overview-view','calendar-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   const filterbar = document.querySelector('.filterbar');
@@ -9303,48 +9342,24 @@ async function loadAdmin(){
   }
   renderAdmin(access);
 }
+let ADM_TABS = [];       // cached tab list for Add User
+let ADM_VERSIONS = [];   // cached base-version list for Add User
 function renderAdmin(access){
   const admin = document.getElementById('admin-view');
   const users = access.users || {};
-  const slugOptions = buildAllSlugList();
-  const rows = Object.entries(users).map(([email, entry]) => {
-    const slugs = entry.slugs === '*' ? '*' : (entry.slugs || []);
-    const role = entry.role || 'viewer';
-    return { email, slugs, role };
-  });
-  function slugChips(rowIdx, currentSlugs){
-    const isAll = currentSlugs === '*';
-    return `<div class="adm-slug-chips" data-row="${rowIdx}">
-      <label class="adm-chip ${isAll?'on':''}"><input type="checkbox" data-slug-all ${isAll?'checked':''}> All Tabs (*)</label>
-      ${slugOptions.map(s => {
-        const checked = isAll ? false : (Array.isArray(currentSlugs) && currentSlugs.includes(s.slug));
-        return `<label class="adm-chip ${checked?'on':''}" ${isAll?'style="opacity:.4;pointer-events:none"':''}>
-          <input type="checkbox" data-slug="${s.slug}" ${checked?'checked':''}> ${s.name}
-        </label>`;
-      }).join('')}
-    </div>`;
-  }
-  const rowHtml = rows.map((r, idx) => `
-    <tr data-row="${idx}" data-email="${r.email}">
-      <td><input class="adm-email" type="email" value="${r.email}" style="width:100%"></td>
-      <td><select class="adm-role">
-          <option value="admin" ${r.role==='admin'?'selected':''}>admin</option>
-          <option value="editor" ${r.role==='editor'?'selected':''}>editor</option>
-          <option value="viewer" ${r.role==='viewer'?'selected':''}>viewer</option>
-          <option value="denied" ${r.role==='denied'?'selected':''}>denied</option>
-        </select></td>
-      <td>${slugChips(idx, r.slugs)}</td>
-      <td><button class="btn-sm" onclick="adminRemoveRow(${idx})">&#10005;</button></td>
-    </tr>
-  `).join('');
+  const tabs = buildAllSlugList();
   const allBase = [...new Set(((typeof DATA!=='undefined' && DATA && DATA.meta && DATA.meta.available_versions) || []).map(baseVersion))].sort();
-  const verChips = allBase.length
+  ADM_TABS = tabs; ADM_VERSIONS = allBase;
+  const cards = Object.entries(users).map(([email, entry]) => adminUserCardHtml(email, normalizeAccessEntry(entry), tabs, allBase)).join('');
+
+  // Global version-hide card (applies to everyone; per-user limits above further restrict individuals).
+  const gVerChips = allBase.length
     ? allBase.map(b => `<label class="adm-chip ${!VERSION_HIDDEN.has(b)?'on':''}"><input type="checkbox" data-ver="${b.replace(/"/g,'&quot;')}" ${!VERSION_HIDDEN.has(b)?'checked':''}> ${b}</label>`).join('')
     : '<span style="font-size:12px;color:var(--gray)">Open any data tab once, then return here to load the version list.</span>';
   const versionsCard = `
-    <div class="card" style="max-width:1200px;margin-top:16px">
-      <div class="card-h">Forecast Versions
-        <span class="meta">Check the versions people can pick in the Compare dropdowns. Unchecked = hidden everywhere.</span>
+    <div class="card" style="max-width:1100px;margin-top:16px">
+      <div class="card-h">Forecast Versions (global)
+        <span class="meta">Hide versions from everyone's Compare dropdowns. Per-user limits (above) further restrict individuals.</span>
       </div>
       <div style="padding:14px 18px">
         <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
@@ -9353,50 +9368,85 @@ function renderAdmin(access){
           <button class="btn-sm btn-primary" onclick="adminSaveVersions()">Save Versions</button>
           <span id="adm-ver-status" style="font-size:12px;color:var(--gray)"></span>
         </div>
-        <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${verChips}</div>
-        <p style="font-size:11px;color:var(--gray);margin-top:14px">
-          Applies to the AOP / 8+4 / prior-period pickers on every tab. Saved to your browser instantly; a global save for all users uses the same sign-in gate as comments.
-        </p>
+        <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${gVerChips}</div>
       </div>
     </div>`;
   admin.innerHTML = `
-    <div class="card" style="max-width:1200px">
+    <div class="card" style="max-width:1100px">
       <div class="card-h">User Access
-        <span class="meta">Edit roles + which sidebar tabs each user can see. Click Save to commit changes (saved to GitHub access.json).</span>
+        <span class="meta">Per-tab capabilities + which plan versions each person can compare. Save commits to access.json.</span>
       </div>
       <div style="padding:14px 18px">
         <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center">
-          <button class="btn-sm btn-primary" onclick="adminAddRow()">+ Add User</button>
-          <button class="btn-sm btn-primary dirty" onclick="adminSave()" id="adm-save-btn">Save Changes</button>
+          <button class="btn-sm btn-primary" onclick="adminAddUser()">+ Add User</button>
+          <button class="btn-sm btn-primary" onclick="adminSave()">Save Changes</button>
           <span id="adm-status" style="font-size:12px;color:var(--gray)"></span>
         </div>
-        <table class="dr-table">
-          <thead><tr>
-            <th>Email</th><th style="width:110px">Role</th><th>Allowed Tabs</th><th style="width:50px"></th>
-          </tr></thead>
-          <tbody id="adm-tbody">${rowHtml}</tbody>
-        </table>
-        <p style="font-size:11px;color:var(--gray);margin-top:14px">
-          <strong>Roles:</strong> admin = manage access (you only). editor = full edit on Working Forecast for allowed tabs. viewer = read-only for allowed tabs. denied = no access.
+        <div id="adm-users">${cards || '<p style="font-size:12px;color:var(--gray)">No users yet — click “+ Add User”.</p>'}</div>
+        <p style="font-size:11px;color:var(--gray);margin-top:8px">
+          <strong>Admin</strong> = manage access + full edit everywhere. Otherwise choose capabilities per tab —
+          <strong>View</strong> (read-only), <strong>Tag</strong> (categorize transactions), <strong>Comment</strong>,
+          <strong>Forecast</strong> (edit Working Forecast lines). No boxes on a tab = that tab is hidden for the user.
         </p>
       </div>
     </div>
     ${versionsCard}
   `;
-  admin.querySelectorAll('[data-slug-all]').forEach(cb => {
-    cb.onchange = () => {
-      const wrap = cb.closest('.adm-slug-chips');
-      wrap.querySelectorAll('[data-slug]').forEach(c => {
-        c.disabled = cb.checked;
-        c.closest('.adm-chip').style.opacity = cb.checked ? '.4' : '';
-        c.closest('.adm-chip').style.pointerEvents = cb.checked ? 'none' : '';
-        if (cb.checked) c.checked = false;
-      });
-    };
-  });
+  wireAdminCards(admin);
   admin.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
     cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
   });
+}
+function adminUserCardHtml(email, norm, tabs, allBase){
+  const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast']];
+  const esc = s => String(s).replace(/"/g,'&quot;');
+  const tabRows = tabs.map(t => {
+    const eff = (norm.tabs && norm.tabs[t.slug]) || {};
+    const cells = CAPS.map(([c,lbl]) => `<label class="adm-chip ${eff[c]?'on':''}" style="padding:2px 9px"><input type="checkbox" data-tab="${esc(t.slug)}" data-cap="${c}" ${eff[c]?'checked':''}> ${lbl}</label>`).join(' ');
+    return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;flex-wrap:wrap"><span style="width:150px;font-size:12px;color:var(--navy);font-weight:600">${t.name}</span>${cells}</div>`;
+  }).join('');
+  const verAll = norm.versions === '*' || !Array.isArray(norm.versions);
+  const verSet = verAll ? new Set() : new Set(norm.versions);
+  const verChips = `<label class="adm-chip ${verAll?'on':''}"><input type="checkbox" data-ver-all ${verAll?'checked':''}> All versions</label> ` +
+    allBase.map(b => `<label class="adm-chip ${(!verAll&&verSet.has(b))?'on':''}" ${verAll?'style="opacity:.4;pointer-events:none"':''}><input type="checkbox" data-uver="${esc(b)}" ${(!verAll&&verSet.has(b))?'checked':''}> ${b}</label>`).join(' ');
+  return `
+    <div class="adm-user-card" data-email="${esc(email)}" style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <input class="adm-email" type="email" value="${esc(email)}" placeholder="name@ifit.com" style="flex:1;min-width:220px;max-width:300px">
+        <label class="adm-chip ${norm.admin?'on':''}"><input type="checkbox" class="adm-admin" ${norm.admin?'checked':''}> Admin (all access)</label>
+        <button class="btn-sm" style="margin-left:auto" onclick="adminRemoveCard(this)">&#10005; Remove</button>
+      </div>
+      <div class="adm-caps" ${norm.admin?'style="opacity:.4;pointer-events:none"':''}>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin-bottom:4px">Tabs &amp; capabilities</div>
+        ${tabRows}
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin:8px 0 4px">Plan versions they can compare</div>
+        <div class="adm-uvers" style="display:flex;flex-wrap:wrap;gap:5px">${verChips}</div>
+      </div>
+    </div>`;
+}
+function wireAdminCards(root){ (root||document).querySelectorAll('.adm-user-card').forEach(wireAdminCard); }
+function wireAdminCard(card){
+  card.querySelectorAll('.adm-chip input[type=checkbox]').forEach(cb => {
+    if (cb.dataset.verAll !== undefined || cb.classList.contains('adm-admin')) return;
+    cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
+  });
+  const adminCb = card.querySelector('.adm-admin');
+  if (adminCb) adminCb.onchange = () => {
+    adminCb.closest('.adm-chip').classList.toggle('on', adminCb.checked);
+    const caps = card.querySelector('.adm-caps');
+    if (caps){ caps.style.opacity = adminCb.checked ? '.4' : ''; caps.style.pointerEvents = adminCb.checked ? 'none' : ''; }
+  };
+  const verAllCb = card.querySelector('[data-ver-all]');
+  if (verAllCb) verAllCb.onchange = () => {
+    verAllCb.closest('.adm-chip').classList.toggle('on', verAllCb.checked);
+    card.querySelectorAll('[data-uver]').forEach(c => {
+      c.disabled = verAllCb.checked;
+      const chip = c.closest('.adm-chip');
+      chip.style.opacity = verAllCb.checked ? '.4' : '';
+      chip.style.pointerEvents = verAllCb.checked ? 'none' : '';
+      if (verAllCb.checked){ c.checked = false; chip.classList.remove('on'); }
+    });
+  };
 }
 function adminVersionsToggleAll(on){
   document.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
@@ -9431,53 +9481,35 @@ function buildAllSlugList(){
   (MANIFEST?.tabs || []).forEach(t => { if (!seen.has(t.slug)){ seen.add(t.slug); out.push({slug:t.slug, name:t.name}); } });
   return out;
 }
-function adminAddRow(){
-  const tbody = document.getElementById('adm-tbody');
-  const idx = tbody.children.length;
-  const slugs = buildAllSlugList();
-  const tr = document.createElement('tr');
-  tr.dataset.row = idx;
-  tr.innerHTML = `
-    <td><input class="adm-email" type="email" placeholder="name@ifit.com" style="width:100%"></td>
-    <td><select class="adm-role">
-      <option value="editor" selected>editor</option>
-      <option value="admin">admin</option>
-      <option value="viewer">viewer</option>
-      <option value="denied">denied</option>
-    </select></td>
-    <td><div class="adm-slug-chips" data-row="${idx}">
-      <label class="adm-chip"><input type="checkbox" data-slug-all> All Tabs (*)</label>
-      ${slugs.map(s => `<label class="adm-chip"><input type="checkbox" data-slug="${s.slug}"> ${s.name}</label>`).join('')}
-    </div></td>
-    <td><button class="btn-sm" onclick="adminRemoveRow(${idx})">&#10005;</button></td>
-  `;
-  tbody.appendChild(tr);
-  tr.querySelector('[data-slug-all]').onchange = ev => {
-    tr.querySelectorAll('[data-slug]').forEach(c => {
-      c.disabled = ev.target.checked;
-      c.closest('.adm-chip').style.opacity = ev.target.checked ? '.4' : '';
-      c.closest('.adm-chip').style.pointerEvents = ev.target.checked ? 'none' : '';
-      if (ev.target.checked) c.checked = false;
-    });
-  };
+function adminAddUser(){
+  const container = document.getElementById('adm-users');
+  const placeholder = container.querySelector('p'); if (placeholder) placeholder.remove();
+  const wrap = document.createElement('div');
+  wrap.innerHTML = adminUserCardHtml('', { admin:false, tabs:{}, versions:'*' }, ADM_TABS, ADM_VERSIONS);
+  const card = wrap.firstElementChild;
+  container.appendChild(card);
+  wireAdminCard(card);
+  const em = card.querySelector('.adm-email'); if (em) em.focus();
 }
-function adminRemoveRow(idx){
-  const tr = document.querySelector(`#adm-tbody tr[data-row="${idx}"]`);
-  if (tr && confirm('Remove this user?')) tr.remove();
+function adminRemoveCard(btn){
+  const card = btn.closest('.adm-user-card');
+  if (card && confirm('Remove this user?')) card.remove();
 }
 async function adminSave(){
   const status = document.getElementById('adm-status');
-  status.textContent = 'Saving…';
+  if (status) status.textContent = 'Saving…';
   const users = {};
-  document.querySelectorAll('#adm-tbody tr').forEach(tr => {
-    const email = (tr.querySelector('.adm-email').value || '').trim().toLowerCase();
+  document.querySelectorAll('#adm-users .adm-user-card').forEach(card => {
+    const email = (card.querySelector('.adm-email').value || '').trim().toLowerCase();
     if (!email) return;
-    const role = tr.querySelector('.adm-role').value;
-    const allCb = tr.querySelector('[data-slug-all]');
-    let slugs;
-    if (allCb && allCb.checked) slugs = '*';
-    else slugs = [...tr.querySelectorAll('[data-slug]:checked')].map(c => c.dataset.slug);
-    users[email] = { slugs, role };
+    if (card.querySelector('.adm-admin').checked){ users[email] = { admin:true, tabs:{}, versions:'*' }; return; }
+    const tabs = {};
+    card.querySelectorAll('[data-tab][data-cap]:checked').forEach(cb => {
+      (tabs[cb.dataset.tab] = tabs[cb.dataset.tab] || {})[cb.dataset.cap] = true;
+    });
+    const verAll = card.querySelector('[data-ver-all]').checked;
+    const versions = verAll ? '*' : [...card.querySelectorAll('[data-uver]:checked')].map(c => c.dataset.uver);
+    users[email] = { admin:false, tabs, versions };
   });
   try {
     const res = await fetch('/api/access', {
@@ -9489,9 +9521,9 @@ async function adminSave(){
       const t = await res.text().catch(()=>res.statusText);
       throw new Error('HTTP ' + res.status + ' ' + t);
     }
-    status.textContent = 'Saved ✓ ' + new Date().toLocaleTimeString();
+    if (status) status.textContent = 'Saved ✓ ' + new Date().toLocaleTimeString();
   } catch(e){
-    status.textContent = 'Save failed: ' + (e && e.message || e);
+    if (status) status.textContent = 'Saved locally only — global save needs the sign-in gate (' + (e && e.message || e) + ')';
   }
 }
 
