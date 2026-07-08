@@ -10,3 +10,7 @@ desktop.ini
 
 # Local server / editor
 *.log
+logs/
+
+# Throwaway diagnostic / one-off scripts (prefixed with underscore)
+scripts/_*.py
