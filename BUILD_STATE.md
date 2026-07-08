@@ -42,4 +42,13 @@ Snowflake → `scripts/refresh_all.py`→`refresh_dept.py` → `data/marketing.j
 2. **Cloudflare Access login gate NOT set up** → `/api/*` returns 401 → "Save Categories authentication failing" (categories are browser-local only, won't persist for others). Zero Trust → Access → self-hosted app on the pages.dev host, policy: emails ending @ifit.com. This is the last infra step + makes sharing safe.
 3. Marketing dept-head name/email still placeholder ("Marketing") in access.json/manifest/_domain_config.
 
-## Git: latest commit `f04b468` (Media revenue from rev_gl_pl). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
+## Automation — daily refresh (DONE, 2026-07-07)
+Full chain runs itself: **Snowflake → refresh_all.py → git commit+push → Cloudflare rebuild**.
+- **Wrapper:** `scripts/daily_refresh.ps1` — runs refresh_all.py, stages **only `data/`**, commits `Automated daily data refresh <date>`, pushes, logs to `logs/refresh_*.log` (30-day prune). Exit 0 = ok.
+- **Registrar:** `scripts/register_daily_task.ps1` (params `-Time -Cadence -TaskName`) creates Windows Scheduled Task **"iFIT Marketing BvA - Daily Refresh"**: Mon–Fri 06:30, `StartWhenAvailable` (catch-up on missed), runs on battery, principal = Chandler.Harris **Interactive** (so Credential Manager vault w/ Snowflake pwd + GitHub token is unlocked). Re-run to change time.
+- **Verified:** direct run AND scheduler-triggered run both exit 0 and pushed (`bffdbc9`, `3d8e25c`).
+- Caveat: needs PC on + logged in at some point on/after 06:30; if off it catches up at next logon. `logs/` + `scripts/_*.py` are gitignored.
+- Known minor: consecutive refreshes produce large non-deterministic JSON diffs (~17k lines) — Snowflake row order isn't stable (no ORDER BY on some pulls). Cosmetic churn only; future cleanup = sort keys / add ORDER BY for deterministic output.
+- Change schedule: `powershell -ExecutionPolicy Bypass -File scripts\register_daily_task.ps1 -Time 05:00 -Cadence Daily`. Check health: Task Scheduler → last run result, or newest `logs/refresh_*.log`.
+
+## Git: latest commit `b9a7481` (daily auto-refresh automation). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
