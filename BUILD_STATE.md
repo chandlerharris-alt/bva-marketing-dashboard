@@ -51,4 +51,12 @@ Full chain runs itself: **Snowflake → refresh_all.py → git commit+push → C
 - Known minor: consecutive refreshes produce large non-deterministic JSON diffs (~17k lines) — Snowflake row order isn't stable (no ORDER BY on some pulls). Cosmetic churn only; future cleanup = sort keys / add ORDER BY for deterministic output.
 - Change schedule: `powershell -ExecutionPolicy Bypass -File scripts\register_daily_task.ps1 -Time 05:00 -Cadence Daily`. Check health: Task Scheduler → last run result, or newest `logs/refresh_*.log`.
 
-## Git: latest commit `79f883f` (Media revenue ties to Excel — local-currency FX fix). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
+## Design system (iFIT 2.0 — applied 2026-07-07)
+Source pkg: `Downloads/iFIT Design System.zip` (Shark #272930 dominant, Electric Lime #78F264 accent, deep teal #12313B, Geist/Geist Mono, 24px card / 999px pill radii, sentence-case, no emoji). Chosen scope: **dark Shark chrome + LIGHT data tables** (legibility), **teal-forward, green used sparingly**.
+- All tokens live in `index.html` `:root` as `--ifit-*` vars; dashboard's `--navy/--sidebar-bg/etc.` remapped onto them. Change the whole look from there.
+- Chrome (`.sidebar`, `.topbar`) = Shark `#272930`; active tab keyline = lime `--ifit-green`; primary/interactive = teal `--ifit-teal-900`; favorable text `#0E9E6E`, unfavorable `#E23A2E` (readable on white).
+- Buttons/chips/segmented controls/`.pill-group` + JS inline channel/region toggles (`bOn/bOff`, `aOn/aOff`) = 999px pills. Cards/KPIs = 12px radius + `--ifit-shadow-sm`. Selects/inputs = 10px.
+- Fonts via Google Fonts CDN (line 13): Geist 100–900 + Geist Mono. Wordmark already inline SVG in `.sb-brand`.
+- LEFT as-is (already on-brand teal/fog, low benefit to change): Chart.js dataset palettes + OPEX monthly-matrix header colors (`#01323C/#015047/#BEB8A2`), `#E8E6DE` accent-val on dark tiles. Full DS pkg (imagery/ui_kits/fonts TTF) NOT copied into repo — only tokens applied.
+
+## Git: latest commit `0db1a09` (iFIT design system applied). Push after each change; Cloudflare auto-rebuilds ~1-2 min.
