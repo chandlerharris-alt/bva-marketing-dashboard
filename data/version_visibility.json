@@ -1,5 +1,18 @@
 {
-  "_comment": "Base forecast-version names HIDDEN from the dashboard Compare dropdowns (AOP / 8+4 / prior-period). Empty = all versions visible. New cuts default to visible. Edit via Admin > Forecast Versions.",
+  "_comment": "Base forecast-version names HIDDEN from the dashboard Compare dropdowns. Empty = all visible. Edit via Admin > Forecast Versions.",
   "_last_updated": "2026-07-08",
-  "hidden": []
+  "_last_updated_by": "chandler.harris@ifit.com",
+  "hidden": [
+    "FY25 AOP",
+    "FY25: 10+2",
+    "FY25: 2+10",
+    "FY25: 4+8",
+    "FY25: 7+5",
+    "FY26: 2+10",
+    "FY26: 5+7",
+    "FY26: 8+4 Final",
+    "FY26: AOP Final",
+    "FY27 AOP v5.5.26",
+    "Trial Balance Actuals"
+  ]
 }
