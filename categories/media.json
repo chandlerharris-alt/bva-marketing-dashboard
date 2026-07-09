@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-07-09T14:44:06.082Z",
+  "_last_updated": "2026-07-09T14:45:12.038Z",
   "_last_updated_by": "chandler.harris@ifit.com",
   "slug": "media",
   "categories": [
@@ -17,12 +17,18 @@
       "id": "uc-1783608242528-474",
       "name": "Paid Social",
       "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1783608292712-284",
+      "name": "Non-Brand Paid Search",
+      "color": "#fbcfe8"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
     "6736000": {
-      "paid social": "uc-1783608242528-474"
+      "paid social": "uc-1783608242528-474",
+      "non-brand paid search": "uc-1783608292712-284"
     }
   }
 }
