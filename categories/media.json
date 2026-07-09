@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-07-09T14:45:12.038Z",
+  "_last_updated": "2026-07-09T22:52:21.955Z",
   "_last_updated_by": "chandler.harris@ifit.com",
   "slug": "media",
   "categories": [
@@ -22,6 +22,11 @@
       "id": "uc-1783608292712-284",
       "name": "Non-Brand Paid Search",
       "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1783637503187-281",
+      "name": "Freelancer",
+      "color": "#ddd6fe"
     }
   ],
   "descToCategory": {},
@@ -29,6 +34,10 @@
     "6736000": {
       "paid social": "uc-1783608242528-474",
       "non-brand paid search": "uc-1783608292712-284"
+    },
+    "6775000": {
+      "freelancer": "uc-1783637503187-281",
+      "emily doenges": "uc-1783637503187-281"
     }
   }
 }
