@@ -1852,10 +1852,23 @@ function setupCompanyMultisel(){
 function channelFactor(rec, fy){
   if (!STATE.selectedChannels) return 1;
   const cm = (rec.actuals_by_channel || {})[fy] || {};
-  if (!Object.keys(cm).length) return 1;
+  if (!Object.keys(cm).length){
+    // No channel breakdown recorded for this account/FY at all. If every channel is
+    // selected (the default, unfiltered view) show it in full; if the user has narrowed
+    // to a subset (e.g. DTC only), we can't attribute this spend to that subset, so
+    // exclude it rather than showing the whole-account total under a single channel's filter.
+    const allRaw = (typeof mktgRawChannels === 'function') ? mktgRawChannels() : [];
+    const isFullSelection = allRaw.length > 0 && allRaw.every(r => STATE.selectedChannels.has(r));
+    return isFullSelection ? 1 : 0;
+  }
+  // Weight by each channel's gross annual magnitude, not its signed net. A channel with
+  // offsetting charges/credits (e.g. a reclass) can net near zero or negative for the year
+  // despite real activity — using the signed net would produce a negative or >1 "share"
+  // and flip the sign of the filtered value (verified on 6750000/FY26: DTC netted -$60K
+  // against Allocate's +$339K, giving a -20% "share" and negating the filtered actual).
   let selected = 0, total = 0;
   Object.entries(cm).forEach(([ch, arr]) => {
-    const a = arr.reduce((s,v) => s + (v||0), 0);
+    const a = Math.abs(arr.reduce((s,v) => s + (v||0), 0));
     total += a;
     if (STATE.selectedChannels.has(ch)) selected += a;
   });
