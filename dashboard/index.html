@@ -567,6 +567,9 @@ tr:hover .fc-del-icon{opacity:1}
 .uc-swatch{display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid rgba(0,0,0,.1)}
 .uc-name{flex:1; color:var(--navy)}
 .uc-count{font-size:10px; color:var(--gray); background:var(--gray-50); padding:1px 6px; border-radius:8px}
+.uc-del{flex-shrink:0; width:16px; height:16px; display:flex; align-items:center; justify-content:center; border-radius:3px; color:var(--gray-300); font-size:11px; cursor:pointer; visibility:hidden}
+.uc-item:hover .uc-del{visibility:visible}
+.uc-del:hover{background:#fee2e2; color:var(--red)}
 .uc-empty-list{font-size:11px; color:var(--gray); padding:10px 4px; text-align:center}
 .uc-add{background:#fffbeb; border:1px solid #fcd34d; border-radius:4px; padding:6px 8px; margin-bottom:8px; display:flex; align-items:center; gap:6px; font-size:11px; color:#92400e}
 .uc-add-prefix{font-weight:600}
@@ -7255,6 +7258,31 @@ function ucCountDescsByCategory(slug, catId){
   Object.values(data.descToCategoryByAcct).forEach(m => { count += Object.values(m).filter(c => c === catId).length; });
   return count;
 }
+// Deletes a category outright (not just "unassign one transaction" like ucSelect(null)) —
+// removes it from the picker list and clears every assignment pointing to it, so those
+// transactions fall back to unassigned ("Other") rather than referencing a dangling category.
+function ucDeleteCategory(slug, catId){
+  const data = loadUserCategories(slug);
+  const idx = data.categories.findIndex(c => c.id === catId);
+  if (idx === -1) return;
+  data.categories.splice(idx, 1);
+  Object.keys(data.descToCategory).forEach(k => { if (data.descToCategory[k] === catId) delete data.descToCategory[k]; });
+  Object.values(data.descToCategoryByAcct).forEach(m => {
+    Object.keys(m).forEach(k => { if (m[k] === catId) delete m[k]; });
+  });
+  saveUserCategories(slug, data);
+  if (typeof markCategoriesDirty === 'function') markCategoriesDirty(slug);
+}
+function ucDeleteCategoryPrompt(el){
+  const catId = el.dataset.catId, name = el.dataset.catName, count = +el.dataset.catCount || 0;
+  const msg = count > 0
+    ? `Delete "${name}"? ${count} transaction${count===1?'':'s'} currently tagged with it will become untagged (shown under "Other"). This can't be undone once you click Save Categories.`
+    : `Delete "${name}"? It isn't used by any transactions right now.`;
+  if (!confirm(msg)) return;
+  ucDeleteCategory(ACTIVE_SLUG, catId);
+  closeUcPopover();
+  if (typeof render === 'function') render();
+}
 function ucChipHtml(slug, desc, account){
   if (!desc) return '';
   const cat = ucGetCategoryForDescAcct(slug, desc, account);
@@ -7286,7 +7314,9 @@ function openUcPopover(ev, anchorEl, desc){
     (existing.length ? existing.map(c => {
       const count = ucCountDescsByCategory(slug, c.id);
       const isCur = cur && cur.id === c.id ? ' uc-cur' : '';
-      return '<div class="uc-item' + isCur + '" data-cat-id="' + c.id + '" onclick="ucSelect(\'' + c.id + '\')"><span class="uc-swatch" style="background:' + c.color + '"></span><span class="uc-name">' + String(c.name).replace(/</g,'&lt;') + '</span><span class="uc-count">' + count + '</span></div>';
+      const nameEsc = String(c.name).replace(/</g,'&lt;');
+      const nameAttrEsc = String(c.name).replace(/"/g,'&quot;');
+      return '<div class="uc-item' + isCur + '" data-cat-id="' + c.id + '" onclick="ucSelect(\'' + c.id + '\')"><span class="uc-swatch" style="background:' + c.color + '"></span><span class="uc-name">' + nameEsc + '</span><span class="uc-count">' + count + '</span><span class="uc-del" title="Delete this category" data-cat-id="' + c.id + '" data-cat-name="' + nameAttrEsc + '" data-cat-count="' + count + '" onclick="event.stopPropagation();ucDeleteCategoryPrompt(this)">&#10005;</span></div>';
     }).join('') : '<div class="uc-empty-list">No categories yet — type to add one.</div>') +
     '</div>' +
     '<div class="uc-add" id="uc-add" style="display:none"><span class="uc-add-prefix">+ Add new:</span><span class="uc-add-name" id="uc-add-name"></span><button class="uc-add-btn" onclick="ucAddAndAssign()">Add &amp; assign</button></div>' +
