@@ -1849,31 +1849,80 @@ function setupCompanyMultisel(){
 // Compute the channel-pro-rata factor for an account in a given FY.
 // Used to scale the company-level actuals when channel filter is active
 // (we don't store cube of channel × company at the account level — too sparse).
-function channelFactor(rec, fy){
-  if (!STATE.selectedChannels) return 1;
-  const cm = (rec.actuals_by_channel || {})[fy] || {};
-  if (!Object.keys(cm).length){
-    // No channel breakdown recorded for this account/FY at all. If every channel is
-    // selected (the default, unfiltered view) show it in full; if the user has narrowed
-    // to a subset (e.g. DTC only), we can't attribute this spend to that subset, so
-    // exclude it rather than showing the whole-account total under a single channel's filter.
-    const allRaw = (typeof mktgRawChannels === 'function') ? mktgRawChannels() : [];
-    const isFullSelection = allRaw.length > 0 && allRaw.every(r => STATE.selectedChannels.has(r));
-    return isFullSelection ? 1 : 0;
-  }
-  // Weight by each channel's gross annual magnitude, not its signed net. A channel with
-  // offsetting charges/credits (e.g. a reclass) can net near zero or negative for the year
-  // despite real activity — using the signed net would produce a negative or >1 "share"
-  // and flip the sign of the filtered value (verified on 6750000/FY26: DTC netted -$60K
-  // against Allocate's +$339K, giving a -20% "share" and negating the filtered actual).
-  let selected = 0, total = 0;
-  Object.entries(cm).forEach(([ch, arr]) => {
-    const a = Math.abs(arr.reduce((s,v) => s + (v||0), 0));
-    total += a;
-    if (STATE.selectedChannels.has(ch)) selected += a;
+// True only when the user has narrowed to a real subset of channels (not "all selected",
+// which is the default/unfiltered state — rebuildChannelOptions() resets to the full set
+// on every tab load).
+function channelFilterIsNarrowed(){
+  if (!STATE.selectedChannels) return false;
+  const allRaw = (typeof mktgRawChannels === 'function') ? mktgRawChannels() : [];
+  return allRaw.length > 0 && STATE.selectedChannels.size < allRaw.length;
+}
+
+// Sums an fy->company->[12] map (e.g. actuals_by_company) over the effective company set,
+// with FX conversion. No channel awareness — shared by the unfiltered path and by the
+// channel-filtered path's fallback for accounts with no channel breakdown at all.
+function companyScopedMonthly(byCompanyFy, fy, effCo){
+  const cm = (byCompanyFy || {})[fy] || {};
+  const monthly = new Array(12).fill(0);
+  Object.entries(cm).forEach(([c, arr]) => {
+    if (!effCo.has(c)) return;
+    for (let i=0;i<12;i++){
+      const v = arr[i] || 0;
+      if (STATE.currency === 'USD'){ const r = fxRate(c, fy, i+1); monthly[i] += r ? v / r : v; }
+      else monthly[i] += v;
+    }
   });
-  if (Math.abs(total) < 0.5) return 1;
-  return selected / total;
+  return monthly;
+}
+
+// Channel + company scoped actuals, summed DIRECTLY from actuals_by_channel_company
+// (fy -> channel -> company -> [12]) rather than approximated by an annual pro-rata ratio.
+// This fixes two bugs the ratio approach had: (1) the ratio was computed from GLOBAL
+// (all-region) channel totals, so a region sub-tab (e.g. "US") could show a channel-filtered
+// balance derived from a completely different region's channel mix; (2) a channel that nets
+// negative for the year (a credit/reclass) could flip the sign of the whole filtered value.
+// Summing the real company+channel buckets directly has neither problem.
+function channelActualsMonthly(rec, fy, effCo){
+  const cbc = (rec.actuals_by_channel_company || {})[fy];
+  if (!cbc || !Object.keys(cbc).length){
+    // No channel breakdown recorded for this account/FY at all. Show the full company-
+    // scoped value only if every channel is selected (unfiltered); otherwise we can't
+    // attribute this spend to the narrower subset, so exclude it.
+    return channelFilterIsNarrowed() ? new Array(12).fill(0) : companyScopedMonthly(rec.actuals_by_company, fy, effCo);
+  }
+  const monthly = new Array(12).fill(0);
+  Object.entries(cbc).forEach(([ch, byCo]) => {
+    if (!STATE.selectedChannels.has(ch)) return;
+    Object.entries(byCo).forEach(([co, arr]) => {
+      if (!effCo.has(co)) return;
+      for (let i=0;i<12;i++){
+        const v = arr[i] || 0;
+        if (STATE.currency === 'USD'){ const r = fxRate(co, fy, i+1); monthly[i] += r ? v / r : v; }
+        else monthly[i] += v;
+      }
+    });
+  });
+  return monthly;
+}
+
+// Channel + company scoped FORECAST, summed directly from forecast_lines (which carry
+// both .channel and .level_code/company per line) for the given version key. A line with
+// no channel tag at all is included only when the view is unfiltered (mirrors computeDrill's
+// chOk()) — otherwise we can't attribute it to whichever channel subset is selected.
+function channelForecastMonthly(rec, verKey, effCo){
+  const narrowed = channelFilterIsNarrowed();
+  const lines = (rec.forecast_lines || []).filter(l => (l.version + ' | FY' + l.fy) === verKey);
+  const amortized = (typeof amortizePrepaidsInLines === 'function') ? amortizePrepaidsInLines(lines) : lines;
+  const monthly = new Array(12).fill(0);
+  amortized.forEach(l => {
+    const co = l.level_code ? String(parseInt(l.level_code,10)) : '';
+    if (co && effCo && effCo.size > 0 && !effCo.has(co)) return;
+    const chOk = narrowed ? (l.channel != null && STATE.selectedChannels.has(String(l.channel))) : true;
+    if (!chOk) return;
+    const fm = l.fm; if (!fm || fm < 1 || fm > 12) return;
+    monthly[fm-1] += (l.amount || 0);
+  });
+  return monthly;
 }
 
 // Returns the effective company set for current state (respects subSection company filter)
@@ -1921,25 +1970,11 @@ function filteredActuals(rec, fy){
     for (let i=0;i<12;i++) monthly[i] += adj[i]||0;
     return monthly;
   }
-  const cm = rec.actuals_by_company[fy] || {};
   const effCo = effectiveCompanySet();
   if (!effCo || effCo.size === 0) return new Array(12).fill(0);
-  const monthly = new Array(12).fill(0);
-  Object.entries(cm).forEach(([c, arr]) => {
-    if (!effCo.has(c)) return;
-    for (let i=0;i<12;i++){
-      const v = arr[i] || 0;
-      if (STATE.currency === 'USD'){
-        const r = fxRate(c, fy, i+1);
-        monthly[i] += r ? v / r : v;
-      } else {
-        monthly[i] += v;
-      }
-    }
-  });
-  // Apply channel filter as a pro-rata factor (FY-level)
-  const cf = channelFactor(rec, fy);
-  if (cf !== 1) for (let i=0;i<12;i++) monthly[i] *= cf;
+  const monthly = STATE.selectedChannels
+    ? channelActualsMonthly(rec, fy, effCo)
+    : companyScopedMonthly(rec.actuals_by_company, fy, effCo);
   // Apply per-account EBITDA addback (ADJ mode)
   const adj = accountAddbackArray(rec, fy);
   for (let i=0;i<12;i++) monthly[i] += adj[i]||0;
@@ -2007,22 +2042,22 @@ function getActuals(rec){ return filteredActuals(rec, STATE.fy); }
 function effectiveSeries(rec, key){
   if (!key) return new Array(12).fill(0);
   if (key.startsWith('ACTUALS_FY')) return getSeries(rec, key);  // actuals already channel-filtered
-  // Channel pro-rata the FORECAST so AOP/8+4 respond to the channel filter like actuals do.
-  const cf = channelFactor(rec, STATE.fy);
+  // When a channel filter is active, compute company+channel scoped forecast DIRECTLY from
+  // forecast_lines (same reasoning as channelActualsMonthly — a global ratio can't respect
+  // a region sub-tab's company scope, and a signed-net ratio can flip sign).
+  const effCo = STATE.selectedChannels ? effectiveCompanySet() : null;
+  const filteredSeries = k => STATE.selectedChannels ? channelForecastMonthly(rec, k, effCo) : getSeries(rec, k);
   if (key.endsWith('| FY' + STATE.fy)){
     const m = key.match(/(\d+)\+(\d+)/);
     if (m){
       const n = +m[1];
-      const arr = getSeries(rec, key);
-      if (cf !== 1) for (let i=0;i<12;i++) arr[i] *= cf;
+      const arr = filteredSeries(key);
       const act = getActuals(rec);  // already channel-filtered
       for (let i=0; i<n && i<12; i++) arr[i] = act[i];
       return arr;
     }
   }
-  const arr = getSeries(rec, key);
-  if (cf !== 1) for (let i=0;i<12;i++) arr[i] *= cf;
-  return arr;
+  return filteredSeries(key);
 }
 
 function rollup(arr){
