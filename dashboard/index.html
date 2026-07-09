@@ -985,9 +985,8 @@ const FM_LABELS = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar','
 const fmtUSD = n => {
   if (n === null || n === undefined || isNaN(n)) return '—';
   if (Math.abs(n) < 0.5) return '—';
-  const sign = n < 0 ? '-' : '';
-  const v = Math.abs(n);
-  return sign + '$' + Math.round(v).toLocaleString();
+  const v = '$' + Math.round(Math.abs(n)).toLocaleString();
+  return n < 0 ? '(' + v + ')' : v;
 };
 const fmtVar = (n, cls) => {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -996,7 +995,15 @@ const fmtVar = (n, cls) => {
   if (cls === 'unfav') return '(' + v + ')';
   return v;
 };
-const fmtPct = n => (n === null || n === undefined || isNaN(n) || !isFinite(n)) ? '—' : (n*100).toFixed(0) + '%';
+// cls is optional — pass it for variance/delta % cells so parens track the same fav/unfav
+// call as the $ column next to it (revenue rows flip sign vs cost rows). Omit it for plain
+// ratios (e.g. "freight % of revenue") where parens should just follow the raw sign.
+const fmtPct = (n, cls) => {
+  if (n === null || n === undefined || isNaN(n) || !isFinite(n)) return '—';
+  const v = (Math.abs(n)*100).toFixed(0) + '%';
+  const neg = cls != null ? (cls === 'unfav') : (n < 0);
+  return neg ? '(' + v + ')' : v;
+};
 const sum = arr => (arr || []).reduce((a,b) => a + (b||0), 0);
 
 // Standard 18-category P&L order (from meta.standard_category_order once loaded;
@@ -2355,7 +2362,7 @@ function renderChannelMatrix(){
     const d = vs - actual;
     const pct = vs ? d/Math.abs(vs) : null;
     const cls = (actual == null || vs == null) ? 'muted' : d > 0 ? 'fav' : d < 0 ? 'unfav' : 'muted';
-    return `<td class="num section-fr ${cls}">${fmtUSD(d)}</td><td class="num section-fr ${cls}">${pct == null ? '—' : fmtPct(pct)}</td>`;
+    return `<td class="num section-fr ${cls}">${fmtUSD(d)}</td><td class="num section-fr ${cls}">${pct == null ? '—' : fmtPct(pct, cls)}</td>`;
   }
 
   function revDeltaCell(actual, vs){
@@ -2681,7 +2688,7 @@ function renderMarketingSummary(){
 
       // Advertising % of Revenue — emphasised
       let pr = '<tr style="background:#dde9ef;border-top:1px solid #b9cdd7;border-bottom:1px solid #b9cdd7"><td style="text-align:left;font-weight:800;color:#01323C">Advertising % of Revenue</td>';
-      const pct1 = x => (x*100).toFixed(1) + '%';
+      const pct1 = x => { const v=(Math.abs(x)*100).toFixed(1)+'%'; return x<0?'('+v+')':v; };
       advS.forEach((ac,i)=>{
         const rc = revS[i]; let txt='—';
         if (ver==='DELTA'){ const ap = rc.act?ac.act/rc.act:null, fp = rc.fc?ac.fc/rc.fc:null; if(ap!=null&&fp!=null) txt = pct1(ap-fp); }
@@ -2729,7 +2736,7 @@ function renderWarehouseMatrix(){
     const d = vs - actual;
     const pct = vs ? d/Math.abs(vs) : null;
     const cls = d>0?'fav':d<0?'unfav':'muted';
-    return `<td class="num section-fr ${cls}">${fmtUSD(d)}</td><td class="num section-fr ${cls}">${pct==null?'—':fmtPct(pct)}</td>`;
+    return `<td class="num section-fr ${cls}">${fmtUSD(d)}</td><td class="num section-fr ${cls}">${pct==null?'—':fmtPct(pct, cls)}</td>`;
   }
 
   const html = [];
@@ -2833,7 +2840,7 @@ function renderDeptRollup(){
     const d = vs - actual;
     const pct = vs ? d/Math.abs(vs) : null;
     const cls = d > 0 ? 'fav' : d < 0 ? 'unfav' : 'muted';
-    return `<td class="num ${cls}">${fmtUSD(d)}</td><td class="num ${cls}">${pct == null ? '—' : fmtPct(pct)}</td>`;
+    return `<td class="num ${cls}">${fmtUSD(d)}</td><td class="num ${cls}">${pct == null ? '—' : fmtPct(pct, cls)}</td>`;
   }
 
   function bar(actual, vs){
@@ -3160,7 +3167,7 @@ function deltaCells(actual, vsList, isRev){
     const cls = favClass(actual, vs, isRev);
     dollars += `<td class="num section-d ${cls}">${d == null ? '—' : fmtVar(d, cls)}</td>`;
     const pct = (vs == null || vs === 0) ? null : (vs - actual)/Math.abs(vs);
-    pcts += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct)}</td>`;
+    pcts += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct, cls)}</td>`;
   });
   return dollars + pcts;
 }
@@ -3367,12 +3374,13 @@ function revRowMedia(label, v){
 function pctRowMedia(label, grp, rev){
   const pv = (g, r) => (r && Math.abs(r) > 0.5) ? g/r : null;
   const pPY=pv(grp.py,rev.py), pA=pv(grp.a,rev.a), pAct=pv(grp.actual,rev.actual);
-  const fmtP = p => p==null ? '—' : (p*100).toFixed(1)+'%';
+  const fmtP = p => { if (p==null) return '—'; const v=(Math.abs(p)*100).toFixed(1)+'%'; return p<0?'('+v+')':v; };
   const bpsCell = pVer => {
     if (pVer==null || pAct==null) return `<td class="num section-d muted">—</td>`;
     const bps = Math.round((pVer - pAct) * 10000);  // plan% − actual% : positive = actual ratio lower = favorable
     const cls = bps > 0 ? 'fav' : bps < 0 ? 'unfav' : 'muted';
-    return `<td class="num section-d ${cls}">${bps>0?'+':''}${bps} bps</td>`;
+    const bpsTxt = bps > 0 ? `+${bps} bps` : bps < 0 ? `(${Math.abs(bps)} bps)` : '0 bps';
+    return `<td class="num section-d ${cls}">${bpsTxt}</td>`;
   };
   return `<tr class="media-pct-row" style="font-style:italic;background:#eef4f8;font-weight:600;color:#01323C"><td>${label}</td>
     <td class="num section-val">${fmtP(pPY)}</td><td class="num section-val">${fmtP(pA)}</td><td class="num section-val">${fmtP(pAct)}</td>
@@ -5806,7 +5814,7 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
     const cls = Math.abs(diff) < 0.5 ? 'muted' : diff > 0 ? 'unfav' : 'fav';
     return `<td class="num fc-cmp">${fmtUSD(cmpVal)}</td>
             <td class="num fc-cmp ${cls}">${fmtUSD(diff)}</td>
-            <td class="num fc-cmp ${cls}">${pct==null?'—':fmtPct(pct)}</td>`;
+            <td class="num fc-cmp ${cls}">${pct==null?'—':fmtPct(pct, cls)}</td>`;
   }
 
   const monthCols = fys.flatMap(fy => FM_LABELS.map(m => `${m}<span class="fc-fy-suffix"> ${fy-2000}</span>`));
@@ -6164,8 +6172,8 @@ function buildSummaryView(d){
   const vp = d.vs_py;
   const delta84 = vp.fy27_aop_total - vp.fy26_84_total;
   const deltaAOP = vp.fy27_aop_total - vp.fy26_actual_total;
-  const pct84 = vp.fy26_84_total ? ((delta84 / Math.abs(vp.fy26_84_total)) * 100).toFixed(1) : '—';
-  const pctAOP = vp.fy26_actual_total ? ((deltaAOP / Math.abs(vp.fy26_actual_total)) * 100).toFixed(1) : '—';
+  const pct84 = vp.fy26_84_total ? fmtPct(delta84 / Math.abs(vp.fy26_84_total)) : '—';
+  const pctAOP = vp.fy26_actual_total ? fmtPct(deltaAOP / Math.abs(vp.fy26_actual_total)) : '—';
 
   let html = `
   <div class="fc-kpi-row">
@@ -6195,13 +6203,13 @@ function buildSummaryView(d){
     <div class="fc-cmp-item">
       <div class="cmp-lbl">FY26 8+4 (${vp.fy26_84_label})</div>
       <div class="cmp-val">${fcFmt(vp.fy26_84_total)}</div>
-      <div class="fc-cmp-delta ${delta84 > 0 ? 'up' : 'down'}">${delta84 > 0 ? '+' : ''}${fcFmt(delta84)} (${delta84 > 0 ? '+' : ''}${pct84}% YoY)</div>
+      <div class="fc-cmp-delta ${delta84 > 0 ? 'up' : 'down'}">${delta84 > 0 ? '+' : ''}${fcFmt(delta84)} ${pct84} YoY</div>
     </div>
     <div class="fc-cmp-sep">|</div>
     <div class="fc-cmp-item">
       <div class="cmp-lbl">FY26 AOP (${vp.fy26_actual_label})</div>
       <div class="cmp-val">${fcFmt(vp.fy26_actual_total)}</div>
-      <div class="fc-cmp-delta ${deltaAOP > 0 ? 'up' : 'down'}">${deltaAOP > 0 ? '+' : ''}${fcFmt(deltaAOP)} vs FY26 AOP (${deltaAOP > 0 ? '+' : ''}${pctAOP}%)</div>
+      <div class="fc-cmp-delta ${deltaAOP > 0 ? 'up' : 'down'}">${deltaAOP > 0 ? '+' : ''}${fcFmt(deltaAOP)} vs FY26 AOP ${pctAOP}</div>
     </div>
   </div>
 
@@ -7618,7 +7626,11 @@ function ovRefreshBody(){
   const {fm: curFm} = currentFyFm();
   const catOrder = data.meta.standard_category_order || [];
 
-  function fmtK(v){ return Math.abs(v)>=500?'$'+(v/1000).toFixed(0)+'K':(Math.abs(v)>0.5?'$'+Math.round(v):'—'); }
+  function fmtK(v){
+    if (Math.abs(v) < 0.5) return '—';
+    const s = Math.abs(v)>=500 ? '$'+(Math.abs(v)/1000).toFixed(0)+'K' : '$'+Math.round(Math.abs(v));
+    return v<0 ? '('+s+')' : s;
+  }
 
   const body = document.getElementById('ov-body');
   const h = [];
@@ -8082,7 +8094,7 @@ function ovRefreshBody(){
     // Table: category rows + forecast row + variance row + accuracy row
     const SWCOLORS = ['#01323C','#015047','#BEB8A2','#03685E','#75797D','#E8E6DE','#4A7C72','#A8A296'];
     const verShortSw = (verKey||'').replace(/ \| FY\d+/,'');
-    function fmtAcc(act,fc){ if(!fc||Math.abs(fc)<1) return '—'; return (act/fc*100).toFixed(0)+'%'; }
+    function fmtAcc(act,fc){ if(!fc||Math.abs(fc)<1) return '—'; const r=act/fc; const v=(Math.abs(r)*100).toFixed(0)+'%'; return r<0?'('+v+')':v; }
     h.push(`<div class="card"><div class="card-h">Software Breakdown — FY${fy-2000}<span class="meta">Actuals by category vs ${verShortSw}</span></div>`);
     h.push(`<div class="bva-wrap"><table class="bva"><thead><tr class="col-row"><th style="min-width:160px"></th>`);
     for(let fm2=1;fm2<=12;fm2++) h.push(`<th>${FM[fm2]}${fm2<=throughFm?'':'*'}</th>`);
@@ -8216,7 +8228,7 @@ function ovRenderCharts(verKey, fy){
         { label: 'CL Actual', data: clM, backgroundColor: '#BEB8A2', stack: 'a', order: 2 },
         { label: 'Total Forecast', data: fcTotal, type: 'line', borderColor: '#EF4444', borderWidth: 2, borderDash: [6,3], pointRadius: 3, pointBackgroundColor: '#EF4444', fill: false, order: 1 },
       ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => v >= 1000 ? '$' + (v/1000).toFixed(0) + 'K' : '$' + v } } } }
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } }, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => { const s = Math.abs(v) >= 1000 ? '$' + (Math.abs(v)/1000).toFixed(0) + 'K' : '$' + Math.abs(v); return v < 0 ? '(' + s + ')' : s; } } } } }
     });
   })();
 
@@ -8280,9 +8292,9 @@ function ovRenderCharts(verKey, fy){
       data: { labels: FML, datasets },
       options: { responsive: true, maintainAspectRatio: false, interaction:{mode:'index',intersect:false},
         plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
-          tooltip: { callbacks: { label: ctx => { const v = ctx.parsed.y; return ctx.dataset.label + ': ' + (Math.abs(v)>=1000?'$'+(v/1000).toFixed(1)+'K':'$'+Math.round(v)); } } }
+          tooltip: { callbacks: { label: ctx => { const v = ctx.parsed.y; const s = Math.abs(v)>=1000?'$'+(Math.abs(v)/1000).toFixed(1)+'K':'$'+Math.round(Math.abs(v)); return ctx.dataset.label + ': ' + (v<0?'('+s+')':s); } } }
         },
-        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => v >= 1000 ? '$'+(v/1000).toFixed(0)+'K' : '$'+v } } }
+        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => { const s = Math.abs(v) >= 1000 ? '$'+(Math.abs(v)/1000).toFixed(0)+'K' : '$'+Math.abs(v); return v < 0 ? '('+s+')' : s; } } } }
       }
     });
   })();
@@ -8366,7 +8378,7 @@ function renderMarginFromSales(){
         const pct = (vs == null || vs === 0) ? null : (vs - actual) / Math.abs(vs);
         const cls = d == null ? 'muted' : (Math.abs(d) < 500 ? 'muted' : (d > 0 ? 'fav' : 'unfav'));
         out += `<td class="num section-d ${cls}">${d == null ? '—' : fmtUSD(d)}</td>`;
-        out += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct)}</td>`;
+        out += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct, cls)}</td>`;
       });
       return out;
     }
@@ -8494,7 +8506,7 @@ function renderReturnsCenterMargin(){
       const pct = (vs == null || vs === 0) ? null : (vs - actual) / Math.abs(vs);
       const cls = d == null ? 'muted' : (Math.abs(d) < 500 ? 'muted' : (d > 0 ? 'fav' : 'unfav'));
       out += `<td class="num section-d ${cls}">${d == null ? '—' : fmtUSD(d)}</td>`;
-      out += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct)}</td>`;
+      out += `<td class="num section-p ${cls}">${pct == null ? '—' : fmtPct(pct, cls)}</td>`;
     });
     return out;
   }
@@ -10273,7 +10285,7 @@ function generateMcSlideDeck(fm, fy, verKey){
   const totalOther = {...sumRows(softwareRow, travelRow, otherRow), label:'Total Other'};
   const grandTotal = {...sumRows(totalLabor, totalOther), label:'Total Marketing'};
 
-  function sdFmt(n){ if(!n||Math.abs(n)<0.5)return '—'; return '$'+Math.round(Math.abs(n)).toLocaleString(); }
+  function sdFmt(n){ if(!n||Math.abs(n)<0.5)return '—'; const s='$'+Math.round(Math.abs(n)).toLocaleString(); return n<0?'('+s+')':s; }
   function sdFmtVar(actual, base){
     const d = base - actual; if(Math.abs(d)<0.5)return {t:'—',c:null};
     return d<0 ? {t:'($'+Math.round(Math.abs(d)).toLocaleString()+')',c:'C0392B'} : {t:'$'+Math.round(d).toLocaleString(),c:null};
