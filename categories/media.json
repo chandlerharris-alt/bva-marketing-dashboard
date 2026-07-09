@@ -1,0 +1,28 @@
+{
+  "_last_updated": "2026-07-09T14:44:06.082Z",
+  "_last_updated_by": "chandler.harris@ifit.com",
+  "slug": "media",
+  "categories": [
+    {
+      "id": "uc-1783535723318-598",
+      "name": "DTC US - Paid Social",
+      "color": "#fde68a"
+    },
+    {
+      "id": "uc-1783535742784-3",
+      "name": "DTC MX - Paid Social",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1783608242528-474",
+      "name": "Paid Social",
+      "color": "#bbf7d0"
+    }
+  ],
+  "descToCategory": {},
+  "descToCategoryByAcct": {
+    "6736000": {
+      "paid social": "uc-1783608242528-474"
+    }
+  }
+}
