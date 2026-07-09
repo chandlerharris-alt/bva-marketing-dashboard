@@ -729,6 +729,13 @@ tr:hover .fc-del-icon{opacity:1}
         <button data-v="LOCAL">Local</button>
       </div>
     </div>
+    <div class="field" id="revsrc-field" style="display:none" title="Adaptive P&amp;L is the closed/recognized revenue figure (incl. subscription). Sales Orders is hardware-only but current within days of ship — use it before the month has closed.">
+      <label>Revenue Source</label>
+      <div class="pill-group" id="revsrc-toggle">
+        <button data-v="adaptive" class="active">Adaptive P&amp;L</button>
+        <button data-v="t360">Sales Orders</button>
+      </div>
+    </div>
   </div>
 
   <!-- ===== View mode toggle bar (above all content) ===== -->
@@ -1114,6 +1121,7 @@ const STATE = {
   cmpA:null, cmpB:null, cmpPY:null,
   adj:'ADJ',
   currency:'USD',
+  revenueSource:'adaptive',  // 'adaptive' (ADAPTIVE_GL_PL_ACTUALS, closed/recognized, incl subscription) | 't360' (T360_GLOBAL_SALES_ORDERS, hardware-only, current within days)
   selectedCompanies:null,
   selectedChannels:null,    // null = no channel dim available; Set = filter active
   trendFocus:null,
@@ -1636,6 +1644,12 @@ function initTab(){
       STATE.currency = b.dataset.v; render();
     };
   });
+  document.querySelectorAll('#revsrc-toggle button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#revsrc-toggle button').forEach(x => x.classList.remove('active')); b.classList.add('active');
+      STATE.revenueSource = b.dataset.v; render();
+    };
+  });
 
   setupComparisonPickers();
   // Filterbar field visibility.
@@ -1649,6 +1663,7 @@ function initTab(){
     show('company-field', !isMedia);    // company dropdown on OPEX; media uses on-grid region buttons
     show('cmpb-field', false);          // Compare B removed on both grids (single "Plan" column)
     show('cmppy-field', false);         // Prior Period auto-fixed to prior FY on both grids
+    show('revsrc-field', isMedia);      // Revenue Source (Adaptive P&L vs Sales Orders) — Media only, drives Gross Revenue Actual/PY
   }
   render();
 
@@ -1739,13 +1754,17 @@ function rebuildCompanyOptions(){
     const co = a.actuals_by_company[STATE.fy] || {};
     Object.entries(co).forEach(([c,arr]) => { if (sum(arr) !== 0) cos.add(c); });
   });
-  // Also include companies that carry GL-PL revenue (Media tab) even if they have no
-  // advertising/OPEX spend — otherwise their revenue is dropped from the global rollup
-  // (China/LATAM/Canada) and the region buttons for those markets show nothing.
-  const RGP = (DATA.meta && DATA.meta.rev_gl_pl) || {};
-  Object.values(RGP).forEach(byCo => Object.entries(byCo).forEach(([c, byFy]) => {
-    const arr = byFy[STATE.fy]; if (arr && /^\d+$/.test(c) && sum(arr) !== 0) cos.add(c);
-  }));
+  // Also include companies that carry revenue from either Revenue Source (Media tab) even if
+  // they have no advertising/OPEX spend — otherwise their revenue is dropped from the global
+  // rollup (China/LATAM/Canada) and the region buttons for those markets show nothing. Union
+  // both rev_gl_pl and rev_t360_sales_orders since their company coverage can differ (e.g.
+  // China/Canada-DTC carry T360 sales-order revenue but not always GL_PL revenue).
+  ['rev_gl_pl', 'rev_t360_sales_orders'].forEach(field => {
+    const RGP = (DATA.meta && DATA.meta[field]) || {};
+    Object.values(RGP).forEach(byCo => Object.entries(byCo).forEach(([c, byFy]) => {
+      const arr = byFy[STATE.fy]; if (arr && /^\d+$/.test(c) && sum(arr) !== 0) cos.add(c);
+    }));
+  });
   const list = [...cos].sort((a,b) => +a - +b);
   STATE.selectedCompanies = new Set(list);
 
@@ -3321,14 +3340,19 @@ function buildMediaGrid(){
   const acctV = a => [rollup(getActuals(a)), rollup(effectiveSeries(a,STATE.cmpA)), rollup(effectiveSeries(a,STATE.cmpB)), rollup(getSeries(a,STATE.cmpPY))];
   const rev = sumV(revAccts), paid = sumV(paidAccts), nonpaid = sumV(nonpaidAccts);
   const totAdv = {actual:paid.actual+nonpaid.actual, a:paid.a+nonpaid.a, b:paid.b+nonpaid.b, py:paid.py+nonpaid.py};
-  // Gross Revenue Actual comes from ADAPTIVE_GL_PL_ACTUALS (Adaptive recognized P&L, incl
-  // subscription) — the Excel's source. NOTE: that table is LOCAL currency, so we FX-convert
-  // per company/month exactly like the actuals path (USD = local / rate). Verified to tie the
-  // Excel Global Summary gross revenue within ~0.6%. Falls back to the RPT/GL-account figure
-  // for any year the table lacks (it only carries FY26+, so PY still comes from the old source).
+  // Gross Revenue Actual comes from one of two sources, per the Revenue Source toggle:
+  //  - 'adaptive' (default): ADAPTIVE_GL_PL_ACTUALS — Adaptive recognized P&L, incl subscription.
+  //    The Excel's source; verified to tie the Excel Global Summary gross revenue within ~0.6%.
+  //    Lags the close, so it can understate an open (not-yet-closed) month badly.
+  //  - 't360': T360_GLOBAL_SALES_ORDERS — hardware sales orders (DTC/Wholesale/Freemotion/Corp-
+  //    Other only, no subscription), but current within days of ship. Use this before the month
+  //    has closed; switch back to Adaptive P&L once it has (Chandler's own close-status call).
+  // Both sources use the identical channel/company/FX shape (fy -> local $ [12], per company),
+  // so the same filtering + FX-conversion logic below works unchanged for either.
   // (AOP/8+4 forecast revenue stays on RPT — that table is hardware-only; subscription forecast is still a gap.)
   {
-    const RGP = (DATA.meta && DATA.meta.rev_gl_pl) || {};
+    const revSrcField = STATE.revenueSource === 't360' ? 'rev_t360_sales_orders' : 'rev_gl_pl';
+    const RGP = (DATA.meta && DATA.meta[revSrcField]) || {};
     if (Object.keys(RGP).length){
       const selDisp = MKTG_DISPLAY_CHANNELS.filter(d => {
         if (!STATE.selectedChannels) return true;
@@ -3336,20 +3360,20 @@ function buildMediaGrid(){
         return raws.length ? raws.every(r => STATE.selectedChannels.has(r)) : true;
       });
       const effCo = effectiveCompanySet();
-      const glplRev = fy => {
+      const revSourceRollup = fy => {
         let t = 0;
         selDisp.forEach(d => { const byCo = RGP[d] || {}; Object.entries(byCo).forEach(([co, byFy]) => {
           if (effCo && !effCo.has(String(co))) return;
           const arr = byFy[String(fy)]; if (!arr) return;
-          // ADAPTIVE_GL_PL_ACTUALS is local currency — convert to USD per month like actuals.
+          // Both sources are local currency — convert to USD per company/month like actuals.
           const conv = arr.map((v, i) => { const r = fxRate(co, fy, i + 1); return (STATE.currency === 'USD' && r) ? v / r : v; });
           t += rollup(conv);
         }); });
         return t;
       };
-      const _ga = glplRev(STATE.fy); if (_ga) rev.actual = _ga;
+      const _ga = revSourceRollup(STATE.fy); if (_ga) rev.actual = _ga;
       const _pyY = String(STATE.cmpPY||'').startsWith('ACTUALS_FY') ? +String(STATE.cmpPY).slice(10) : (STATE.fy - 1);
-      const _gp = glplRev(_pyY); if (_gp) rev.py = _gp;
+      const _gp = revSourceRollup(_pyY); if (_gp) rev.py = _gp;
     }
   }
   // FY27 AOP revenue Plan — from data/rev_aop_fy27.json (channel x region x 12 fiscal months, USD).

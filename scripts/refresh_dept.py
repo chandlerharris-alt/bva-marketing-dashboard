@@ -257,6 +257,10 @@ def main():
     ap.add_argument("--load-gl-pl-revenue", action="store_true",
                     help="Also load ADAPTIVE_GL_PL_ACTUALS recognized revenue (USD, correct channel taxonomy incl "
                          "subscription) into meta.rev_gl_pl — used for the Media tab Gross Revenue + share-of-revenue.")
+    ap.add_argument("--load-t360-sales-orders", action="store_true",
+                    help="Also load T360_GLOBAL_SALES_ORDERS (hardware sales orders, current within days of ship) "
+                         "into meta.rev_t360_sales_orders — an alternate Gross Revenue source for periods that "
+                         "haven't closed yet in ADAPTIVE_GL_PL_ACTUALS. Hardware only, no subscription.")
     args = ap.parse_args()
 
     dept_nums = [int(d.strip()) for d in args.depts.split(",") if d.strip()]
@@ -354,6 +358,12 @@ def main():
     if getattr(args, "load_gl_pl_revenue", False):
         gl_pl_rev = fetch(cur, load_sql("revenue_gl_pl.sql").format(fy_min=args.fy_min, fy_max=args.fy_max),
                           "GL_PL revenue (ADAPTIVE_GL_PL_ACTUALS)")
+
+    # T360_GLOBAL_SALES_ORDERS — alternate revenue source for open (not-yet-closed) periods
+    t360_rev: list[dict] = []
+    if getattr(args, "load_t360_sales_orders", False):
+        t360_rev = fetch(cur, load_sql("revenue_t360_sales_orders.sql").format(fy_min=args.fy_min, fy_max=args.fy_max),
+                          "T360 sales orders (T360_GLOBAL_SALES_ORDERS)")
 
     cur.close()
     conn.close()
@@ -856,6 +866,25 @@ def main():
         amt = float(r.get("amount") or 0.0)
         rev_gl_pl.setdefault(ch, {}).setdefault(co, {}).setdefault(str(fy), [0.0]*12)[fm-1] += amt
 
+    # ---------- T360 sales orders → rev_t360_sales_orders[displayChannel][company][fy] = [12] (local ccy) ----------
+    # Channel already comes out of the query as the display name (Wholesale/DTC/Freemotion/Other) —
+    # only 'Other' needs remapping, to match the dashboard's 'Corp/Other' naming for that bucket.
+    T360_CH = {'WHOLESALE':'Wholesale', 'DTC':'DTC', 'FREEMOTION':'Freemotion', 'OTHER':'Corp/Other'}
+    def t360_norm(ch):
+        return T360_CH.get((ch or "").strip().upper(), 'Corp/Other')
+    rev_t360_sales_orders: dict = {}
+    for r in t360_rev:
+        try:
+            fy = int(r["fy"]); fm = int(r["fm"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if fm < 1 or fm > 12:
+            continue
+        ch = t360_norm(r.get("channel"))
+        co = str(r.get("company"))
+        amt = float(r.get("amount") or 0.0)
+        rev_t360_sales_orders.setdefault(ch, {}).setdefault(co, {}).setdefault(str(fy), [0.0]*12)[fm-1] += amt
+
     # ---------- Output ----------
     fy_in_actuals = sorted({fy for rec in accounts.values() for fy in rec["actuals"].keys()})
     out = {
@@ -882,6 +911,7 @@ def main():
             },
             "source_company_map": SOURCE_COMPANY_MAP,
             "rev_gl_pl": rev_gl_pl,
+            "rev_t360_sales_orders": rev_t360_sales_orders,
         },
         "accounts": [
             {
