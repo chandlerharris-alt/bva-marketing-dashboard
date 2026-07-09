@@ -491,12 +491,28 @@ tr:hover .fc-del-icon{opacity:1}
 .insight-meta-row{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--gray)}
 .insight-empty{color:var(--gray);font-size:12px;font-style:italic}
 .insight-error{color:var(--red);font-size:12px}
-/* Save button in topbar */
-.topbar-save{background:#10b981;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;margin-right:10px;display:flex;align-items:center;gap:6px}
-.topbar-save:disabled{background:#9ca3af;cursor:not-allowed}
-.topbar-save.dirty{background:#f59e0b;animation:pulse-save 2s infinite}
-.topbar-save:hover:not(:disabled){filter:brightness(.95)}
-@keyframes pulse-save{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}50%{box-shadow:0 0 0 8px rgba(245,158,11,0)}}
+/* Save button in topbar — dirty state uses the iFIT bright accent (used sparingly, only for
+   "you must click this to keep your changes" actions) so it reads as unmistakably actionable
+   against the dark chrome / muted data-grid palette everywhere else in the app. */
+.topbar-save{background:var(--gray-300);color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:not-allowed;margin-right:10px;display:flex;align-items:center;gap:6px;transition:background .15s}
+.topbar-save:disabled{background:var(--gray-300);cursor:not-allowed}
+.topbar-save.dirty{background:var(--ifit-green-ink);color:var(--ifit-ink);cursor:pointer;animation:pulse-save 2s infinite}
+.topbar-save:hover:not(:disabled){filter:brightness(1.05)}
+@keyframes pulse-save{0%,100%{box-shadow:0 0 0 0 rgba(4,252,146,.55)}50%{box-shadow:0 0 0 8px rgba(4,252,146,0)}}
+/* Shared "unsaved, click to persist" treatment for Save Comments (both cards) + Admin saves */
+.var-save-btn.is-dirty{background:var(--ifit-green-ink);color:var(--ifit-ink);animation:pulse-save 2s infinite}
+.btn-primary.btn-save-dirty{background:var(--ifit-green-ink);color:var(--ifit-ink);border-color:var(--ifit-green-ink);font-weight:700;animation:pulse-save 2s infinite}
+.btn-primary.btn-save-dirty:hover{background:var(--ifit-green-ink);filter:brightness(1.05)}
+/* Global unsaved-changes banner — fixed to the very top of the viewport, above the sidebar,
+   so it's visible no matter which tab/view is open or how far the user has scrolled. */
+#unsaved-banner{display:none;position:fixed;top:0;left:0;width:100%;z-index:1000;background:var(--ifit-green-ink);color:var(--ifit-ink);
+  padding:8px 16px;font-size:12.5px;font-weight:600;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(4,252,146,.35)}
+#unsaved-banner.show{display:flex}
+#unsaved-banner .ub-text{flex:1}
+#unsaved-banner .ub-text b{font-weight:700}
+#unsaved-banner button{background:var(--ifit-ink);color:var(--ifit-green-ink);border:none;padding:5px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+#unsaved-banner button:hover{filter:brightness(1.3)}
+#unsaved-banner button:disabled{opacity:.6;cursor:not-allowed}
 /* Override status — orange=unsaved local, yellow=server saved, green=admin approved */
 .fc-row.is-unsaved{background:#FFE4C7}
 .fc-row.is-saved{background:#FFF6BF}
@@ -603,6 +619,11 @@ tr:hover .fc-del-icon{opacity:1}
 </style>
 </head>
 <body>
+
+<div id="unsaved-banner">
+  <span class="ub-text" id="ub-text"></span>
+  <button id="ub-save-btn" onclick="saveAllChanges()">Save All</button>
+</div>
 
 <aside class="sidebar">
   <div class="sb-brand">
@@ -1095,6 +1116,17 @@ const STATE = {
 let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null };
 const FC_EXCLUDE_ACCTS = new Set(['6755000','5715000','5715200','5500056','5500057','7855000','7855000C','8925000C','9700000','5561000','5575000','5655000','5772000','6105000','8970000']);
 let SAVE_STATE = { dirty:false, lastSavedAt:null };
+let ADMIN_STATE = { usersDirty:false, versionsDirty:false };
+function markAdminUsersDirty(){ ADMIN_STATE.usersDirty = true; updateAdminSaveButtons(); }
+function markAdminUsersClean(){ ADMIN_STATE.usersDirty = false; updateAdminSaveButtons(); }
+function markAdminVersionsDirty(){ ADMIN_STATE.versionsDirty = true; updateAdminSaveButtons(); }
+function markAdminVersionsClean(){ ADMIN_STATE.versionsDirty = false; updateAdminSaveButtons(); }
+function updateAdminSaveButtons(){
+  const b1 = document.getElementById('adm-save-btn');
+  const b2 = document.getElementById('adm-ver-save-btn');
+  if (b1) b1.classList.toggle('btn-save-dirty', ADMIN_STATE.usersDirty);
+  if (b2) b2.classList.toggle('btn-save-dirty', ADMIN_STATE.versionsDirty);
+}
 // Per-user access: admin flag, per-tab capabilities {view,tag,comment,forecast} keyed by
 // slug ('*' = default for all tabs), and a plan-version allow-list ('*' = all).
 let AUTH_STATE = { email:null, admin:false, tabs:{}, versions:'*', loaded:false };
@@ -3595,7 +3627,10 @@ function updateBvaCatSaveBar(){
   const hasDirty = Object.keys(VARIANCE_COMMENTS.dirty).length > 0;
   bar.style.display = '';
   const btn = document.getElementById('bva-cat-save-btn');
-  if (btn) btn.textContent = hasDirty ? `Save Comments (${Object.keys(VARIANCE_COMMENTS.dirty).length} unsaved)` : 'Save Comments';
+  if (btn){
+    btn.textContent = hasDirty ? `Save Comments (${Object.keys(VARIANCE_COMMENTS.dirty).length} unsaved)` : 'Save Comments';
+    btn.classList.toggle('is-dirty', hasDirty);
+  }
 }
 async function saveBvaCatComments(){
   const fy = STATE.fy || 2026;
@@ -6357,7 +6392,11 @@ function renderBvaVariances(){
     h.push(`</tr>`);
   });
   h.push(`</tbody></table>`);
-  h.push(`<div class="var-save-bar"><button class="var-save-btn" id="var-save-btn" onclick="saveVarianceComments(${fy},${fm},'var-save-status','var-save-btn')">Save Comments</button><span class="var-save-status" id="var-save-status"></span></div>`);
+  {
+    const nDirty = Object.keys(VARIANCE_COMMENTS.dirty).length;
+    const label = nDirty ? `Save Comments (${nDirty} unsaved)` : 'Save Comments';
+    h.push(`<div class="var-save-bar"><button class="var-save-btn${nDirty?' is-dirty':''}" id="var-save-btn" onclick="saveVarianceComments(${fy},${fm},'var-save-status','var-save-btn')">${label}</button><span class="var-save-status" id="var-save-status"></span></div>`);
+  }
   body.innerHTML = h.join('');
 
   body.querySelectorAll('.var-comment').forEach(ta => {
@@ -9630,10 +9669,51 @@ async function saveCategoriesToServer(){
   } finally { if (btn) btn.disabled = false; }
 }
 
-setInterval(() => { updateSaveButton(); updateCategoriesSaveButton(); }, 1000);
+function unsavedChangesSummary(){
+  const parts = [];
+  if (SAVE_STATE.dirty) parts.push('forecast edits (this tab)');
+  const dirtySlugs = Object.keys(UC_DIRTY).filter(s => UC_DIRTY[s]);
+  if (dirtySlugs.length){
+    const here = dirtySlugs.includes(ACTIVE_SLUG);
+    const other = dirtySlugs.filter(s => s !== ACTIVE_SLUG);
+    if (here && !other.length) parts.push('category tags (this tab)');
+    else if (here && other.length) parts.push(`category tags (this tab + ${other.join(', ')})`);
+    else parts.push(`category tags on ${dirtySlugs.join(', ')} — switch to that tab to save`);
+  }
+  if (Object.keys(VARIANCE_COMMENTS.dirty).length > 0) parts.push('comments');
+  if (ADMIN_STATE.usersDirty) parts.push('admin user access — open Admin to save');
+  if (ADMIN_STATE.versionsDirty) parts.push('admin forecast versions — open Admin to save');
+  return parts;
+}
+function updateUnsavedBanner(){
+  const banner = document.getElementById('unsaved-banner');
+  if (!banner) return;
+  const parts = unsavedChangesSummary();
+  if (!parts.length){ banner.classList.remove('show'); return; }
+  banner.classList.add('show');
+  const textEl = document.getElementById('ub-text');
+  if (textEl) textEl.innerHTML = `<b>Unsaved changes</b> — ${parts.join(' · ')}. Not saved until you click the matching Save button.`;
+  const btn = document.getElementById('ub-save-btn');
+  if (btn){
+    const inContext = SAVE_STATE.dirty || (ACTIVE_SLUG && isCategoriesDirty(ACTIVE_SLUG)) || Object.keys(VARIANCE_COMMENTS.dirty).length > 0;
+    btn.style.display = inContext ? '' : 'none';
+  }
+}
+async function saveAllChanges(){
+  const btn = document.getElementById('ub-save-btn');
+  if (btn) btn.disabled = true;
+  try {
+    if (SAVE_STATE.dirty) await saveForecastToServer();
+    if (ACTIVE_SLUG && isCategoriesDirty(ACTIVE_SLUG)) await saveCategoriesToServer();
+    if (Object.keys(VARIANCE_COMMENTS.dirty).length > 0) await saveBvaCatComments();
+  } finally {
+    if (btn) btn.disabled = false;
+    updateUnsavedBanner();
+  }
+}
+setInterval(() => { updateSaveButton(); updateCategoriesSaveButton(); updateUnsavedBanner(); }, 1000);
 window.addEventListener('beforeunload', e => {
-  const dirtyCat = ACTIVE_SLUG && isCategoriesDirty(ACTIVE_SLUG);
-  if (SAVE_STATE.dirty || dirtyCat){ e.preventDefault(); e.returnValue = ''; }
+  if (unsavedChangesSummary().length){ e.preventDefault(); e.returnValue = ''; }
 });
 
 // =====================================================================
@@ -9790,6 +9870,15 @@ async function loadAdmin(){
     admin.className = 'body';
     admin.style.padding = '18px 24px';
     document.querySelector('.shell').appendChild(admin);
+    // Delegated dirty-tracking: admin.innerHTML gets replaced wholesale on every renderAdmin(),
+    // but this listener is on the container itself, so it survives re-renders. Bulk toggles
+    // (adminAddUser/adminRemoveCard/adminVersionsToggleAll) set .checked/DOM structure directly
+    // and don't fire input/change, so those call markAdmin*Dirty() explicitly.
+    admin.addEventListener('input', e => { if (e.target.closest('#adm-users')) markAdminUsersDirty(); });
+    admin.addEventListener('change', e => {
+      if (e.target.closest('#adm-users')) markAdminUsersDirty();
+      else if (e.target.closest('#adm-ver-list')) markAdminVersionsDirty();
+    });
   }
   admin.style.display = 'block';
   document.getElementById('page-title').textContent = 'Admin — User Access';
@@ -9832,7 +9921,7 @@ function renderAdmin(access){
         <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
           <button class="btn-sm" onclick="adminVersionsToggleAll(true)">Select all</button>
           <button class="btn-sm" onclick="adminVersionsToggleAll(false)">Clear all</button>
-          <button class="btn-sm btn-primary" onclick="adminSaveVersions()">Save Versions</button>
+          <button class="btn-sm btn-primary" id="adm-ver-save-btn" onclick="adminSaveVersions()">Save Versions</button>
           <span id="adm-ver-status" style="font-size:12px;color:var(--gray)"></span>
         </div>
         <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${gVerChips}</div>
@@ -9846,7 +9935,7 @@ function renderAdmin(access){
       <div style="padding:14px 18px">
         <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center">
           <button class="btn-sm btn-primary" onclick="adminAddUser()">+ Add User</button>
-          <button class="btn-sm btn-primary" onclick="adminSave()">Save Changes</button>
+          <button class="btn-sm btn-primary" id="adm-save-btn" onclick="adminSave()">Save Changes</button>
           <span id="adm-status" style="font-size:12px;color:var(--gray)"></span>
         </div>
         <div id="adm-users">${cards || '<p style="font-size:12px;color:var(--gray)">No users yet — click “+ Add User”.</p>'}</div>
@@ -9863,6 +9952,8 @@ function renderAdmin(access){
   admin.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
     cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
   });
+  // Fresh load from the server — nothing pending yet.
+  markAdminUsersClean(); markAdminVersionsClean();
 }
 function adminUserCardHtml(email, norm, tabs, allBase){
   const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast'],['insight','Insight']];
@@ -9919,6 +10010,7 @@ function adminVersionsToggleAll(on){
   document.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
     cb.checked = on; cb.closest('.adm-chip').classList.toggle('on', on);
   });
+  markAdminVersionsDirty();
 }
 async function adminSaveVersions(){
   const status = document.getElementById('adm-ver-status');
@@ -9927,6 +10019,7 @@ async function adminSaveVersions(){
   // Instant, per-browser effect + live app state.
   try { localStorage.setItem('bva_hidden_versions', JSON.stringify(hidden)); } catch(e){}
   VERSION_HIDDEN = new Set(hidden.map(baseVersion));
+  markAdminVersionsClean();
   if (status) status.textContent = 'Saved to this browser ✓';
   // Global save commits data/version_visibility.json via GitHub — needs the sign-in gate.
   try {
@@ -9957,10 +10050,11 @@ function adminAddUser(){
   container.appendChild(card);
   wireAdminCard(card);
   const em = card.querySelector('.adm-email'); if (em) em.focus();
+  markAdminUsersDirty();
 }
 function adminRemoveCard(btn){
   const card = btn.closest('.adm-user-card');
-  if (card && confirm('Remove this user?')) card.remove();
+  if (card && confirm('Remove this user?')){ card.remove(); markAdminUsersDirty(); }
 }
 async function adminSave(){
   const status = document.getElementById('adm-status');
@@ -9988,6 +10082,7 @@ async function adminSave(){
       const t = await res.text().catch(()=>res.statusText);
       throw new Error('HTTP ' + res.status + ' ' + t);
     }
+    markAdminUsersClean();
     if (status) status.textContent = 'Saved ✓ ' + new Date().toLocaleTimeString();
   } catch(e){
     if (status) status.textContent = 'Saved locally only — global save needs the sign-in gate (' + (e && e.message || e) + ')';
