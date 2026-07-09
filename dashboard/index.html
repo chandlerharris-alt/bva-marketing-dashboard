@@ -1148,14 +1148,18 @@ function normalizeAccessEntry(entry){
 }
 
 // FX helpers — rates are stored as local-per-USD. Divide local by rate to get USD.
-function fxRate(coCode, fy, fm){
-  const map = (DATA?.meta?.fx_rates) || {};
+function fxRate(coCode, fy, fm, srcData){
+  // srcData lets callers with their own data object (e.g. Overview's OV_COST_DATA, which is
+  // fetched independently of the global DATA and may be the only one loaded) FX-convert
+  // correctly instead of silently falling back to 1.0 because DATA happens to be unset.
+  const src = srcData || DATA;
+  const map = (src?.meta?.fx_rates) || {};
   const byFy = map[String(coCode)];
   if (!byFy) return 1.0;
   // A rate of 1.0 is plausible only for USD companies. For non-USD companies (CAD,
   // MXN, GBP, EUR, AUD, CNY), 1.0 is the refresh's "missing month" sentinel — walk
   // back to find the most recent real rate.
-  const localCcy = (DATA?.meta?.fx_local_currency_by_company || {})[String(coCode)] || 'USD';
+  const localCcy = (src?.meta?.fx_local_currency_by_company || {})[String(coCode)] || 'USD';
   const isUsd = localCcy === 'USD';
   const ok = r => (r != null && r > 0 && (isUsd || r !== 1.0));
   // 1) Exact (fy, fm)
@@ -7757,13 +7761,39 @@ function ovRefreshBody(){
   h.push(`<div class="sc-tile primary"><div class="lbl">Contacts — ${FM[latestContactFm]}</div><div class="val">${contactCount!==null?contactCount.toLocaleString():'—'}</div><div class="sub">Fc: ${contactFcCount!==null?contactFcCount.toLocaleString():'—'} ${contactCount_py!=null?' · PY: '+contactCount_py.toLocaleString():''}</div></div>`);
   h.push(`</div>`);
 
-  // === Row 2: Contacts KPI tiles (operational metrics) ===
+  // === Row 2: % of Revenue by Region (replaces the legacy Contacts operational tiles —
+  // FCR/Cost-per-Resolution/AHT/Wait-Time/Abandon% always rendered "—": OV_CONTACTS is
+  // declared but never fetched anywhere, so `contacts` here is always null. Uses the same
+  // GL_PL revenue source + per-company FX conversion already verified on the Media tab. ===
   h.push(`<div class="scorecard-overall" style="margin-top:12px">`);
-  h.push(`<div class="sc-tile" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">FCR — ${FM[latestContactFm]}</div><div class="val">${fP(contactFCR)}</div><div class="sub">Goal: 85% · PY: ${fP(contactFCR_py)} · T3M: ${fP(contactFCR_t3)}</div></div>`);
-  h.push(`<div class="sc-tile" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">Cost per Resolution</div><div class="val">${fC(contactCPR)}</div><div class="sub">Fc: ${fC(contactCPR_fc)} · PY: ${fC(contactCPR_py)} · T3M: ${fC(contactCPR_t3)}</div></div>`);
-  h.push(`<div class="sc-tile" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">AHT (Phone)</div><div class="val">${contactAHT!=null?fmtHMS(contactAHT):'—'}</div><div class="sub">Goal: 14:30</div></div>`);
-  h.push(`<div class="sc-tile" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">Wait Time (Phone)</div><div class="val">${contactASA!=null?fmtHMS(contactASA):'—'}</div><div class="sub">Goal: 3:00</div></div>`);
-  h.push(`<div class="sc-tile ${contactAbd!=null&&contactAbd>0.05?'unfav':''}" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">Phone Abandon%</div><div class="val">${fP(contactAbd)}</div><div class="sub">&nbsp;</div></div>`);
+  {
+    const RGP = (data.meta && data.meta.rev_gl_pl) || {};
+    const sumRange = arr => {
+      if (ovView === 'MONTH') return arr[throughFm-1] || 0;
+      if (ovView === 'QTD'){ const qStart = Math.floor((throughFm-1)/3)*3; return arr.slice(qStart, throughFm).reduce((s,v)=>s+v,0); }
+      if (ovView === 'YTD') return arr.slice(0, throughFm).reduce((s,v)=>s+v,0);
+      return arr.reduce((s,v)=>s+v,0);
+    };
+    const regionRev = {};
+    Object.values(RGP).forEach(byCo => Object.entries(byCo).forEach(([co, byFy]) => {
+      const arr = byFy[String(fy)]; if (!arr) return;
+      const reg = MEDIA_REGION_ORDER.find(r => (MEDIA_REGION_COMPANIES[r]||[]).map(String).includes(String(co)));
+      if (!reg) return;
+      const conv = arr.map((v,i) => v / fxRate(co, fy, i+1, data));  // local currency -> USD
+      regionRev[reg] = (regionRev[reg]||0) + sumRange(conv);
+    }));
+    const total = Object.values(regionRev).reduce((s,v)=>s+v,0);
+    const ranked = MEDIA_REGION_ORDER.map(reg => ({reg, rev: regionRev[reg]||0}))
+      .filter(r => Math.abs(r.rev) > 0.5).sort((a,b) => b.rev - a.rev);
+    if (!ranked.length || Math.abs(total) < 0.5){
+      h.push(`<div class="sc-tile"><div class="lbl">% of Revenue by Region</div><div class="val" style="font-size:14px;color:var(--gray)">No revenue in this period</div></div>`);
+    } else {
+      ranked.forEach(r => {
+        const pct = r.rev / total;
+        h.push(`<div class="sc-tile" style="position:relative;transition:transform .15s,box-shadow .15s;cursor:default" onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(27,42,74,.12)'" onmouseleave="this.style.transform='';this.style.boxShadow=''"><div class="lbl">${r.reg} % of Revenue</div><div class="val">${(pct*100).toFixed(1)}%</div><div class="sub">${fmtUSD(r.rev)} of ${fmtUSD(total)}</div></div>`);
+      });
+    }
+  }
   h.push(`</div>`);
 
   // === Hygiene + Untagged summary (computed from OV_COST_DATA) ===
