@@ -650,8 +650,10 @@ tr:hover .fc-del-icon{opacity:1}
     </div>
     <!-- Contacts + Calendar tabs were Member Care-only and have been removed for Marketing. -->
   </div>
-  <!-- Admin section (hidden unless current user has role=admin) -->
-  <div id="sb-admin-wrap" style="display:none; margin-top:12px">
+  <!-- Admin section (hidden unless current user has role=admin) — pinned to the bottom of the
+       sidebar (margin-top:auto in a flex column pushes it + everything after it down) so it
+       doesn't get buried under a long tab list. -->
+  <div id="sb-admin-wrap" style="display:none; margin-top:auto; padding-top:12px">
     <div class="sb-section-h">Admin</div>
     <div class="sb-tabs">
       <div class="sb-tab" id="sb-admin-tab" data-slug="admin" onclick="loadAdmin()">
@@ -9661,6 +9663,11 @@ function applyAuthToUi(){
   }
   const adminWrap = document.getElementById('sb-admin-wrap');
   if (adminWrap) adminWrap.style.display = AUTH_STATE.admin ? '' : 'none';
+  // Only one sibling should carry margin-top:auto at a time, or flexbox splits the free
+  // space between them and leaves a gap. When Admin is visible it does the "push to
+  // bottom" job; the "Refreshed" footer just follows immediately after it.
+  const sbMeta = document.querySelector('.sb-meta');
+  if (sbMeta) sbMeta.style.marginTop = AUTH_STATE.admin ? '0' : '';
   filterSidebarByAccess();
 }
 function renderAccessDenied(){
