@@ -1402,6 +1402,7 @@ function loadTab(slug){
   if (av) av.style.display = 'none';
 
   ACTIVE_SLUG = slug;
+  hydrateCategoriesFromServer(slug);
   // Update active classes — parent tab stays "active" (dimly) when sub-section is active
   document.querySelectorAll('.sb-tab').forEach(d => {
     const isCurrent = d.dataset.slug === slug;
@@ -7280,6 +7281,28 @@ function loadUserCategories(slug){
 }
 function saveUserCategories(slug, obj){
   try { localStorage.setItem(ucKey(slug), JSON.stringify(obj)); } catch(e){}
+}
+// Categories are saved to the server (GET/POST /api/categories -> categories/<slug>.json via
+// GitHub) so they're shared across everyone, but loadUserCategories() only ever reads the
+// local cache. Without this, a save from one browser was permanently invisible to every other
+// browser/incognito/teammate -- looked like "tagging doesn't save" when saving actually worked
+// fine; nothing ever pulled it back down. Called once per tab load; skipped if this browser has
+// its own unsaved edits pending (UC_DIRTY) so we don't clobber in-progress local changes.
+async function hydrateCategoriesFromServer(slug){
+  if (!slug || UC_DIRTY[slug]) return;
+  try {
+    const r = await fetch('/api/categories?slug=' + encodeURIComponent(slug), { credentials: 'include', cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || j.error) return;
+    if (UC_DIRTY[slug]) return; // re-check: user may have started editing while the fetch was in flight
+    saveUserCategories(slug, {
+      categories: j.categories || [],
+      descToCategory: j.descToCategory || {},
+      descToCategoryByAcct: j.descToCategoryByAcct || {},
+    });
+    if (ACTIVE_SLUG === slug && typeof render === 'function') render();
+  } catch(e){}
 }
 function ucNormDesc(desc){ return String(desc||'').trim().toLowerCase(); }
 function ucGetCategoryForDescAcct(slug, desc, account){
