@@ -5175,7 +5175,14 @@ function renderForecastPane(){
 
   // ---- Summary sub-tab — Category -> Account -> Lines from ALL sources ----
   if (STATE.fcSubTab === 'summary'){
-    const allSources = ['PLANNING_GENERAL','CONTRACT_LABOR','TRAVEL_ENT'];
+    // Salaries & Wages and Topside Adjustments forecast come from their own Adaptive tables
+    // (SALARIES_WAGES / TOPSIDE_ADJUSTMENTS), not PLANNING_GENERAL — they were missing here
+    // entirely (Salaries didn't appear anywhere on this sub-tab) even though the render code
+    // below already has S&W/TS source-tag labels built in (buildFcSummaryCard's srcLabel
+    // lookup), just never fed any lines to tag. These accounts DO show correctly in the main
+    // Financial Performance grid, which reads the pre-aggregated forecasts field regardless of
+    // source — this sub-tab is the one place that was hardcoded to a narrower list.
+    const allSources = ['PLANNING_GENERAL','CONTRACT_LABOR','TRAVEL_ENT','SALARIES_WAGES','TOPSIDE_ADJUSTMENTS'];
 
     const perFyLines = {};
     fys.forEach(fy => {
