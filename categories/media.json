@@ -1,43 +1,41 @@
 {
-  "_last_updated": "2026-07-09T22:52:21.955Z",
-  "_last_updated_by": "chandler.harris@ifit.com",
+  "_last_updated": "2026-07-10T03:51:30.907Z",
+  "_last_updated_by": "michael.doran@ifit.com",
   "slug": "media",
   "categories": [
     {
-      "id": "uc-1783535723318-598",
-      "name": "DTC US - Paid Social",
+      "id": "uc-1783655155133-408",
+      "name": "freelancer",
       "color": "#fde68a"
     },
     {
-      "id": "uc-1783535742784-3",
-      "name": "DTC MX - Paid Social",
+      "id": "uc-1783655433879-480",
+      "name": "US Ski & Snow",
       "color": "#bfdbfe"
     },
     {
-      "id": "uc-1783608242528-474",
-      "name": "Paid Social",
+      "id": "uc-1783655453583-877",
+      "name": "CMC",
       "color": "#bbf7d0"
-    },
-    {
-      "id": "uc-1783608292712-284",
-      "name": "Non-Brand Paid Search",
-      "color": "#fbcfe8"
-    },
-    {
-      "id": "uc-1783637503187-281",
-      "name": "Freelancer",
-      "color": "#ddd6fe"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
-    "6736000": {
-      "paid social": "uc-1783608242528-474",
-      "non-brand paid search": "uc-1783608292712-284"
+    "6763000": {
+      "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
+      "us ski & snow accrual": "uc-1783655433879-480",
+      "christian mccaffrey - production": "uc-1783655453583-877",
+      "52930 mccaffe amort": "uc-1783655453583-877",
+      "mccaffery": "uc-1783655453583-877",
+      "christian mccaffrey - fee fy26": "uc-1783655453583-877",
+      "us ski & snowboard - activation": "uc-1783655433879-480"
     },
     "6775000": {
-      "freelancer": "uc-1783637503187-281",
-      "emily doenges": "uc-1783637503187-281"
+      "freelancer": "uc-1783655155133-408",
+      "153805   emily doenges": "uc-1783655155133-408",
+      "emily doenges": "uc-1783655155133-408",
+      "52443   ascend staffing": "uc-1783655155133-408",
+      "ascend staffing": "uc-1783655155133-408"
     }
   }
 }
