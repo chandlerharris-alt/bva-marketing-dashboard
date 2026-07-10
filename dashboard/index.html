@@ -556,6 +556,9 @@ tr:hover .fc-del-icon{opacity:1}
 .uc-chip:hover{filter:brightness(.95)}
 .uc-chip.uc-empty{background:#fff; color:var(--gray); border:1px dashed var(--border); font-weight:500}
 .uc-chip.uc-empty:hover{background:#fafcff; color:var(--navy); border-color:var(--cyan)}
+.reclass-btn{visibility:hidden; display:inline-block; margin-left:6px; font-size:10px; padding:1px 8px; border-radius:10px; border:1px dashed var(--border); background:#fff; color:var(--gray); cursor:pointer; white-space:nowrap; vertical-align:middle}
+.reclass-btn:hover{background:#fafcff; color:var(--navy); border-color:var(--cyan)}
+tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibility:visible}
 .uc-popover{position:fixed; z-index:400; background:#fff; border:1px solid var(--border); border-radius:6px; box-shadow:0 6px 24px rgba(27,42,74,.18); padding:12px 14px; min-width:280px; max-width:340px}
 .uc-pop-h{font-size:12px; color:var(--gray); margin-bottom:8px}
 .uc-pop-h strong{color:var(--navy)}
@@ -648,6 +651,10 @@ tr:hover .fc-del-icon{opacity:1}
       <div>Overview</div>
       <div class="owner">All Marketing</div>
     </div>
+    <div class="sb-tab" id="sb-reclass-tab" data-slug="reclass" onclick="loadReclassView()">
+      <div>Reclass Suggestions</div>
+      <div class="owner">All tabs</div>
+    </div>
     <!-- Contacts + Calendar tabs were Member Care-only and have been removed for Marketing. -->
   </div>
   <!-- Admin section (hidden unless current user has role=admin) — pinned to the bottom of the
@@ -736,6 +743,13 @@ tr:hover .fc-del-icon{opacity:1}
       <div class="pill-group" id="revsrc-toggle">
         <button data-v="adaptive" class="active">Adaptive P&amp;L</button>
         <button data-v="t360">Sales Orders</button>
+      </div>
+    </div>
+    <div class="field" title="Restate the financials as if every open reclass suggestion had actually been posted.">
+      <label>Reclass</label>
+      <div class="pill-group" id="reclass-toggle">
+        <button data-v="before" class="active">Before</button>
+        <button data-v="after">After</button>
       </div>
     </div>
   </div>
@@ -903,6 +917,11 @@ tr:hover .fc-del-icon{opacity:1}
     <div id="overview-content"><div class="spinner">Loading…</div></div>
   </div>
 
+  <!-- ===== Reclass Suggestions view ===== -->
+  <div id="reclass-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
+    <div id="reclass-content"><div class="spinner">Loading…</div></div>
+  </div>
+
   <!-- ===== Contacts view ===== -->
   <div id="contacts-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
     <div id="contacts-content"><div class="spinner">Loading contacts data…</div></div>
@@ -961,6 +980,40 @@ tr:hover .fc-del-icon{opacity:1}
     <div class="modal-footer">
       <button class="btn-sm" onclick="closeFcRowModal()">Cancel</button>
       <button class="btn-sm btn-primary" onclick="saveFcRowModal()">Add Line</button>
+    </div>
+  </div>
+</div>
+
+<!-- Suggest Reclass Modal -->
+<div class="modal-backdrop" id="reclass-modal">
+  <div class="modal" style="position:relative">
+    <button class="close-btn" onclick="closeReclassModal()">&#10005;</button>
+    <h3>Suggest Reclass</h3>
+    <div id="rc-summary" style="font-size:12px;color:var(--gray);background:var(--gray-50);border-radius:6px;padding:8px 12px;margin-bottom:14px"></div>
+    <div id="rc-existing-note" style="display:none;font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #f59e0b;border-radius:4px;padding:6px 10px;margin-bottom:10px">A suggestion already exists for this transaction — submitting will replace it.</div>
+    <div class="form-row">
+      <div class="form-field" style="flex:2"><label>GL Account</label>
+        <select id="rc-account" onchange="document.getElementById('rc-account-other').style.display = this.value==='__other__' ? '' : 'none'"></select>
+        <input id="rc-account-other" type="text" placeholder="Account code — name" style="display:none;margin-top:4px">
+      </div>
+      <div class="form-field"><label>Department</label><input id="rc-dept" type="text" placeholder="e.g. 080"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Company</label>
+        <select id="rc-company" onchange="document.getElementById('rc-company-other').style.display = this.value==='__other__' ? '' : 'none'"></select>
+        <input id="rc-company-other" type="text" placeholder="Company number" style="display:none;margin-top:4px">
+      </div>
+      <div class="form-field"><label>Tag</label>
+        <select id="rc-tag" onchange="document.getElementById('rc-tag-new').style.display = this.value==='__new__' ? '' : 'none'"></select>
+        <input id="rc-tag-new" type="text" placeholder="New tag name" style="display:none;margin-top:4px">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Note (optional)</label><input id="rc-note" type="text" placeholder="Why this should be reclassed"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="closeReclassModal()">Cancel</button>
+      <button class="btn-sm btn-primary" id="rc-submit-btn" onclick="submitReclassForm()">Submit Suggestion</button>
     </div>
   </div>
 </div>
@@ -1131,6 +1184,7 @@ const STATE = {
   viewMode:'bva',           // 'bva' | 'forecast'
   fcVersion:null,           // active forecast version key (legacy — kept in sync)
   fcSubTab:'opex',          // 'opex' | 'cl' | 'te' | 'summary'
+  reclassMode:'before',     // 'before' | 'after' — restate financials with suggested reclasses applied
 };
 
 let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null };
@@ -1289,6 +1343,9 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
   })
   .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); filterSidebarByAccess(); })
   .catch(err => { document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Failed to load manifest: '+err+'</div>'; });
+// Reclass suggestions span every tab (the summary tab and the before/after toggle both need
+// the full list regardless of which tab is active), so hydrate once here rather than per-loadTab().
+hydrateReclassFromServer();
 
 function renderSidebar(){
   const el = document.getElementById('sb-tabs');
@@ -1398,6 +1455,7 @@ function loadTab(slug){
   hideForecastPane();
   hideContactsView();
   hideCalendarView();
+  hideReclassView();
   const av = document.getElementById('admin-view');
   if (av) av.style.display = 'none';
 
@@ -1584,6 +1642,7 @@ function initTab(){
   applyPrepaidToForecasts();
   // Per-tab account scope: 'marketing' (OPEX) hides advertising accounts; 'media' keeps only advertising + revenue.
   if (DATA && Array.isArray(DATA.accounts)) DATA.accounts = scopeAccountsForTab(DATA.accounts);
+  if (typeof invalidateReclassMemo === 'function') invalidateReclassMemo();  // DATA.accounts changed underneath the memo
   _mktgRawCh = null;  // reset channel cache so each tab's summary recomputes from its scoped accounts
   STATE.mktgRegion = 'GLOBAL';  // reset summary region toggle to the default on each tab load
   document.getElementById('refreshed-at').textContent = 'Refreshed: ' + DATA.meta.refreshed_at.replace('T',' ');
@@ -1651,6 +1710,12 @@ function initTab(){
     b.onclick = () => {
       document.querySelectorAll('#revsrc-toggle button').forEach(x => x.classList.remove('active')); b.classList.add('active');
       STATE.revenueSource = b.dataset.v; render();
+    };
+  });
+  document.querySelectorAll('#reclass-toggle button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('#reclass-toggle button').forEach(x => x.classList.remove('active')); b.classList.add('active');
+      STATE.reclassMode = b.dataset.v; render();
     };
   });
 
@@ -1767,6 +1832,13 @@ function rebuildCompanyOptions(){
     Object.values(RGP).forEach(byCo => Object.entries(byCo).forEach(([c, byFy]) => {
       const arr = byFy[STATE.fy]; if (arr && /^\d+$/.test(c) && sum(arr) !== 0) cos.add(c);
     }));
+  });
+  // Also include any reclass destination company, even one with no other current activity --
+  // otherwise a suggestion moving money to a genuinely new company would show up in the "after"
+  // totals but get silently filtered out by the company selector (which defaults to everything
+  // it already knows about).
+  Object.values(RECLASS.suggestions || {}).forEach(s => {
+    if (s.slug === ACTIVE_SLUG && s.to_company != null && s.to_company !== '') cos.add(String(s.to_company));
   });
   const list = [...cos].sort((a,b) => +a - +b);
   STATE.selectedCompanies = new Set(list);
@@ -2692,7 +2764,7 @@ function renderMarketingSummary(){
     }
     const dispVal = c => ver==='ACT' ? c.act : ver==='FC' ? c.fc : (c.act - c.fc);
     const series = valFn => { const arr=disp.map(d=>valFn(d)); arr.push({act:arr.reduce((s,c)=>s+c.act,0), fc:arr.reduce((s,c)=>s+c.fc,0)}); return arr; };
-    const accts = DATA.accounts||[];
+    const accts = getMergedAccounts()||[];
     const adRecs = accts.filter(a=>MKTG_AD_ACCTS.has(a.reporting_account));
     const opexRecs = accts.filter(a=>!MKTG_AD_ACCTS.has(a.reporting_account) && a.category!=='Revenue');
     const order = DATA.meta.standard_category_order||[];
@@ -3083,7 +3155,7 @@ function effectiveDeptSeries(d, key){
 
 function renderCompanies(){
   const present = new Set();
-  DATA.accounts.forEach(a => {
+  getMergedAccounts().forEach(a => {
     const cm = a.actuals_by_company[STATE.fy] || {};
     Object.entries(cm).forEach(([c, arr]) => {
       if (STATE.selectedCompanies && !STATE.selectedCompanies.has(c)) return;
@@ -3128,7 +3200,7 @@ function buildTable(){
   const isRevReturnsView = (ACTIVE_SLUG === 'obf-admin-reverse' && STATE.subSection?.id === 'reverse');
   const BVA_HIDE_ACCOUNTS = new Set(isRevReturnsView ? ['4500055','5500055'] : []);
   const seenRA = new Set();
-  DATA.accounts.forEach(a => {
+  getMergedAccounts().forEach(a => {
     const ra = String(a.reporting_account);
     if (seenRA.has(ra)) return;
     seenRA.add(ra);
@@ -3329,10 +3401,11 @@ function mediaToggleRegion(reg){
   render();
 }
 function buildMediaGrid(){
-  const adByRA = {}; (DATA.accounts||[]).forEach(a => { adByRA[String(a.reporting_account)] = a; });
+  const mergedAccts = getMergedAccounts();
+  const adByRA = {}; (mergedAccts||[]).forEach(a => { adByRA[String(a.reporting_account)] = a; });
   const paidAccts = MEDIA_PAID_ACCTS.map(r => adByRA[r]).filter(Boolean);
   const nonpaidAccts = [...MKTG_AD_ACCTS].filter(r => !MEDIA_PAID_ACCTS.includes(r)).sort().map(r => adByRA[r]).filter(Boolean);
-  const revAccts = (DATA.accounts||[]).filter(a => isRevenueAccount(a.reporting_account));
+  const revAccts = (mergedAccts||[]).filter(a => isRevenueAccount(a.reporting_account));
   const sumV = accs => ({
     actual: accs.reduce((s,a)=>s+rollup(getActuals(a)),0),
     a:      accs.reduce((s,a)=>s+rollup(effectiveSeries(a,STATE.cmpA)),0),
@@ -3506,7 +3579,7 @@ function renderCompanyBvATable(){
       wrap.querySelectorAll('tr.expansion-row').forEach(r => r.remove());
       wrap.querySelectorAll('tr.co-acct-row.open').forEach(r => r.classList.remove('open'));
       tr.classList.add('open');
-      const a = DATA.accounts.find(x => x.reporting_account === acct);
+      const a = getMergedAccounts().find(x => x.reporting_account === acct);
       if (!a) return;
       const expRow = document.createElement('tr');
       expRow.className = 'expansion-row';
@@ -3554,9 +3627,10 @@ function coAcctForecast(rec, co, versionKey) {
 }
 
 function buildCompanyBvATable() {
+  const accts = getMergedAccounts();
   // Discover which companies have any activity in this FY
   const coSet = new Set();
-  DATA.accounts.forEach(a => {
+  accts.forEach(a => {
     const cm = a.actuals_by_company[STATE.fy] || {};
     Object.keys(cm).forEach(co => {
       if (!STATE.selectedCompanies || STATE.selectedCompanies.has(String(co))) coSet.add(String(co));
@@ -3565,8 +3639,8 @@ function buildCompanyBvATable() {
 
   // Sorted by absolute actual descending
   const companies = [...coSet].sort((x, y) => {
-    const ax = DATA.accounts.reduce((s, a) => s + Math.abs(coAcctActuals(a, x)), 0);
-    const ay = DATA.accounts.reduce((s, a) => s + Math.abs(coAcctActuals(a, y)), 0);
+    const ax = accts.reduce((s, a) => s + Math.abs(coAcctActuals(a, x)), 0);
+    const ay = accts.reduce((s, a) => s + Math.abs(coAcctActuals(a, y)), 0);
     return ay - ax;
   });
 
@@ -3597,7 +3671,7 @@ function buildCompanyBvATable() {
   companies.forEach(co => {
     // Compute per-company totals across all accounts
     let coActual = 0, coA = 0, coB = 0, coPY = 0;
-    DATA.accounts.forEach(a => {
+    accts.forEach(a => {
       coActual += coAcctActuals(a, co);
       coA      += coAcctForecast(a, co, STATE.cmpA);
       coB      += coAcctForecast(a, co, STATE.cmpB);
@@ -3626,7 +3700,7 @@ function buildCompanyBvATable() {
     const byCat = {};
     const stdOrder2 = getStandardCategoryOrder();
     const stdSet2 = new Set(stdOrder2);
-    DATA.accounts.forEach(a => {
+    accts.forEach(a => {
       const v = Math.abs(coAcctActuals(a, co)) + Math.abs(coAcctForecast(a, co, STATE.cmpA))
               + Math.abs(coAcctForecast(a, co, STATE.cmpB));
       if (v < 1) return;
@@ -3769,7 +3843,7 @@ function renderTable(){
       wrap.querySelectorAll('tr.acct-row.open').forEach(r => { r.classList.remove('open'); removeDrillRows(wrap, r.dataset.acct); });
       wrap.querySelectorAll('tr.expansion-row').forEach(r => r.remove());
       tr.classList.add('open');
-      const a = DATA.accounts.find(x => x.reporting_account === acct);
+      const a = getMergedAccounts().find(x => x.reporting_account === acct);
       if (!a) return;
       insertDrillCats(tr, a);   // native category rows -> click a category for its transactions
       STATE.trendFocus = {type:'acct', key:acct};
@@ -3960,8 +4034,9 @@ function expansionHTML(a){
           const typePill = r.expType.toLowerCase()==='prepaid'
             ? `<span class="fc-type-badge prepaid" style="margin-left:6px">${r.isAmort?'Prepaid (spread)':'Prepaid'}</span>`
             : (r.expType ? `<span class="fc-type-badge expense" style="margin-left:6px">Expense</span>` : '');
+          const rcBtn = (r.status !== 'unmatched-fc') ? reclassBtnHtml(a.reporting_account, r.display, r.ac) : '';
           return `<tr class="${r.status}">
-            <td>${r.display}${pillFor(r.status)}${typePill}${ucChipHtml(ACTIVE_SLUG, r.display, a.reporting_account)}</td>
+            <td>${r.display}${pillFor(r.status)}${typePill}${ucChipHtml(ACTIVE_SLUG, r.display, a.reporting_account)}${rcBtn}</td>
             <td class="amt">${fmtUSD(r.fA)}</td>
             <td class="amt"><strong>${fmtUSD(r.ac)}</strong></td>
             <td class="amt ${cls}">${r.status === 'unmatched-fc' ? '—' : fmtUSD(vs)}</td>
@@ -4067,6 +4142,132 @@ function computeDrill(a){
   });
   return {isRev, cats};
 }
+
+// ---- Reclass "after" overlay ----
+// Computes a restated clone of DATA.accounts with every open reclass suggestion applied, so
+// every existing rendering function sees restated numbers just by reading getMergedAccounts()
+// instead of DATA.accounts directly. DATA.accounts itself is never mutated, so toggling back
+// to "before" is instant and bit-exact. getMergedAccounts() is already referenced defensively
+// at several call sites (typeof getMergedAccounts === 'function' ? ... : DATA.accounts) --
+// this is that function's real implementation.
+let _reclassMemo = { key: null, accounts: null };
+function invalidateReclassMemo(){ _reclassMemo = { key: null, accounts: null }; }
+function getMergedAccounts(){
+  if (!DATA || !DATA.accounts) return (DATA && DATA.accounts) || [];
+  if (STATE.reclassMode !== 'after') return DATA.accounts;
+  const suggestions = Object.values(RECLASS.suggestions || {}).filter(s => s.slug === ACTIVE_SLUG);
+  const key = ACTIVE_SLUG + '|' + suggestions.length + '|' + DATA.accounts.length;
+  if (_reclassMemo.key === key) return _reclassMemo.accounts;
+  const merged = computeReclassedAccounts(DATA.accounts, suggestions);
+  _reclassMemo = { key, accounts: merged };
+  return merged;
+}
+function _rcZero12(){ return new Array(12).fill(0); }
+function _rcEnsureArr(obj, k){ if (!obj[k]) obj[k] = _rcZero12(); return obj[k]; }
+function _rcEnsureObj(obj, k){ if (!obj[k]) obj[k] = {}; return obj[k]; }
+// Adjusts one account's aggregation buckets by `amt` (negative to subtract) for a given
+// fy/fm/company/channel -- everything downstream (filteredActuals, channelActualsMonthly,
+// companyActualsMonthly, etc.) reads these same buckets, so this is the one place the actual
+// dollar movement happens. actuals_by_dept is intentionally left untouched -- drill lines don't
+// carry a department field, and this app is single-dept-scoped per tab, so there's nothing
+// reliable to adjust there.
+function _rcAdjustAccount(acct, fy, fm, amt, company, channel){
+  const fyS = String(fy);
+  acct.actuals = acct.actuals || {};
+  _rcEnsureArr(acct.actuals, fyS)[fm-1] += amt;
+  acct.actuals_by_company = acct.actuals_by_company || {};
+  _rcEnsureArr(_rcEnsureObj(acct.actuals_by_company, fyS), String(company))[fm-1] += amt;
+  if (channel != null){
+    acct.actuals_by_channel = acct.actuals_by_channel || {};
+    _rcEnsureArr(_rcEnsureObj(acct.actuals_by_channel, fyS), channel)[fm-1] += amt;
+    acct.actuals_by_channel_company = acct.actuals_by_channel_company || {};
+    const byCh = _rcEnsureObj(_rcEnsureObj(acct.actuals_by_channel_company, fyS), channel);
+    _rcEnsureArr(byCh, String(company))[fm-1] += amt;
+  }
+}
+function computeReclassedAccounts(accounts, suggestions){
+  if (!suggestions.length) return accounts;
+  const cloneCache = {};
+  const getClone = (reportingAccount) => {
+    const ra = String(reportingAccount);
+    if (cloneCache[ra]) return cloneCache[ra];
+    const src = accounts.find(a => String(a.reporting_account) === ra);
+    const clone = src ? JSON.parse(JSON.stringify(src)) : {
+      reporting_account: reportingAccount, account_name: reportingAccount,
+      category: 'Other Expenses', gl_type: null,
+      actuals: {}, actuals_by_company: {}, actuals_by_channel: {}, actuals_by_channel_company: {}, actuals_by_dept: {},
+      forecasts: {}, forecast_lines: [], drill: [], _synthesized: true,
+    };
+    cloneCache[ra] = clone;
+    return clone;
+  };
+  suggestions.forEach(s => {
+    const fromAcct = getClone(s.from_account);
+    // Match against the PRISTINE source record (not the clone) so a second suggestion on the
+    // same account doesn't match lines the first one already relabeled.
+    const srcOriginal = accounts.find(a => String(a.reporting_account) === String(s.from_account));
+    const rawDrill = (srcOriginal && srcOriginal.drill) || [];
+    const matches = rawDrill.filter(d => {
+      if (d.fy !== s.fy || d.fm !== s.fm) return false;
+      if (s.from_company != null && String(d.source_company) !== String(s.from_company)) return false;
+      if (s.from_channel != null && d.channel !== s.from_channel) return false;
+      const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
+      return normKey(display) === s.vendor_key;
+    });
+    if (!matches.length){ s._stale = true; return; } // data changed since this was suggested
+    s._stale = false;
+
+    // Group matched dollars by (channel, company) so we subtract from the exact buckets they
+    // actually came from, then move that same breakdown (company redirected to the suggested
+    // destination, channel preserved -- channel isn't one of the 4 fields being reclassed) to
+    // the destination account.
+    const byChCo = {};
+    matches.forEach(d => {
+      const ch = d.channel != null ? d.channel : '__none__';
+      const co = String(d.source_company);
+      const k = ch + '|' + co;
+      byChCo[k] = byChCo[k] || { channel: ch === '__none__' ? null : ch, company: co, amount: 0 };
+      byChCo[k].amount += d.amount;
+    });
+
+    const toAcct = getClone(s.to_account);
+    const toCompany = (s.to_company != null && s.to_company !== '') ? s.to_company : null;
+    let totalMoved = 0;
+    Object.values(byChCo).forEach(({channel, company, amount}) => {
+      _rcAdjustAccount(fromAcct, s.fy, s.fm, -amount, company, channel);
+      _rcAdjustAccount(toAcct, s.fy, s.fm, amount, toCompany || company, channel);
+      totalMoved += amount;
+    });
+
+    // Relabel (don't delete) matched lines on the FROM clone and append one synthetic line on
+    // the TO clone, so expansionHTML()'s recon table -- which reads a.drill[] directly, not the
+    // aggregation buckets -- stays consistent with the restated totals. Matching here is by
+    // field equality (not object identity, since fromAcct.drill is a JSON clone of a different
+    // object) -- in the rare case of two truly identical drill lines (same vendor/company/
+    // channel/invoice/amount in the same month), this may relabel both for one suggestion; the
+    // dollar math above already correctly summed from the pristine data regardless.
+    fromAcct.drill = (fromAcct.drill || []).map(d => {
+      const isMatch = matches.some(m => m.fy===d.fy && m.fm===d.fm && String(m.source_company)===String(d.source_company) && m.channel===d.channel && m.vendor===d.vendor && m.customer===d.customer && m.invoice===d.invoice && m.amount===d.amount);
+      return isMatch ? Object.assign({}, d, { _reclassedTo: s.id, amount: 0 }) : d;
+    });
+    toAcct.drill = toAcct.drill || [];
+    toAcct.drill.push({
+      fy: s.fy, fm: s.fm,
+      source_company: toCompany || (matches[0] && matches[0].source_company),
+      vendor: (s.display_snapshot || 'Reclassed') + ' (reclassed)', customer: null, invoice: null,
+      channel: matches[0] ? matches[0].channel : null,
+      amount: totalMoved, _reclassedFrom: s.id, _reclassTagId: s.to_tag_id || null,
+    });
+  });
+
+  const touchedRAs = new Set(Object.keys(cloneCache));
+  const merged = accounts.map(a => touchedRAs.has(String(a.reporting_account)) ? cloneCache[String(a.reporting_account)] : a);
+  Object.keys(cloneCache).forEach(ra => {
+    if (!merged.some(a => String(a.reporting_account) === ra)) merged.push(cloneCache[ra]);
+  });
+  return merged;
+}
+
 function drillCatRowHTML(a, c, isRev, parentCat){
   const nm = String(c.name).replace(/</g,'&lt;');
   const idAttr = String(c.id).replace(/"/g,'&quot;');
@@ -4094,14 +4295,28 @@ function drillSrcRowHTML(a, c, src, list, isRev, parentCat){
     <td class="num section-d"></td><td class="num section-d"></td><td class="num section-p"></td><td class="num section-p"></td>
   </tr>`;
 }
+// Hover-only "Suggest Reclass" button. Only shown for actuals (a reclass moves a real dollar
+// amount, not a PY/Plan figure) and only in MONTH view -- the drill/recon aggregation collapses
+// transactions by vendor+account across whatever period is on screen, so QTD/YTD/FY views can't
+// unambiguously identify a single fiscal month to target. Payload is stashed in a data attribute
+// (not inline in the onclick) to avoid quoting issues with arbitrary vendor text.
+function reclassBtnHtml(ra, display, amount){
+  if (!authCan(ACTIVE_SLUG, 'tag')) return '';
+  if (STATE.view !== 'MONTH' || !STATE.month) return '';
+  if (Math.abs(amount) < 0.5) return '';
+  const payload = JSON.stringify({ra: String(ra), display: String(display), amount, fy: STATE.fy, fm: STATE.month});
+  const escPayload = payload.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  return ` <span class="reclass-btn" data-rc-ctx="${escPayload}" onclick="event.stopPropagation(); openReclassModal(this)">Suggest Reclass</span>`;
+}
 function drillTxnRowHTML(a, c, src, t, isRev, parentCat){
   const dsp = String(t.display).replace(/</g,'&lt;');
   const idAttr = String(c.id).replace(/"/g,'&quot;');
   const typePill = (src==='plan' && t.expType && t.expType.toLowerCase()==='prepaid') ? `<span class="fc-type-badge prepaid" style="margin-left:6px">${t.isAmort?'Prepaid (spread)':'Prepaid'}</span>` : '';
   const cells = {py:'', plan:'', actual:''};
   cells[src] = (src==='actual') ? `<strong>${fmtUSD(t.amount)}</strong>` : fmtUSD(t.amount);
+  const rcBtn = (src==='actual') ? reclassBtnHtml(a.reporting_account, t.display, t.amount) : '';
   return `<tr class="drill-txn-row" data-acct="${a.reporting_account}" data-catid="${idAttr}" data-src="${src}" data-parent-cat="${parentCat}" style="display:none;background:#f4f8fd;font-size:11.5px">
-    <td style="padding-left:84px">${dsp}${typePill} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}</td>
+    <td style="padding-left:84px">${dsp}${typePill} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}${rcBtn}</td>
     <td class="num section-val">${cells.py}</td>
     <td class="num section-val">${cells.plan}</td>
     <td class="num section-val">${cells.actual}</td>
@@ -4159,7 +4374,7 @@ function renderCharts(){
   // rather than throwing — a throw here would propagate out of initTab() into loadTab()'s
   // .catch and wipe the freshly-rendered grid ("Failed: Chart is not defined").
   if (typeof Chart === 'undefined') { return; }
-  const chartAccts = DATA.accounts.filter(a => !shouldExcludeFromBva(a.reporting_account) && !isExcludedCategory(a.category||''));
+  const chartAccts = getMergedAccounts().filter(a => !shouldExcludeFromBva(a.reporting_account) && !isExcludedCategory(a.category||''));
   const cats = [...new Set(chartAccts.map(a => a.category))];
   const colorMap = {
     'Salaries & Wages':'#01323C','Bonuses & Incentives':'#02424F','Commissions':'#015047',
@@ -4230,7 +4445,7 @@ function renderCharts(){
   let focusedCat = null;
   if (STATE.trendFocus && STATE.trendFocus.type === 'cat')   focusedCat = STATE.trendFocus.key;
   if (STATE.trendFocus && STATE.trendFocus.type === 'acct'){
-    const acctRec = DATA.accounts.find(a => a.reporting_account === STATE.trendFocus.key);
+    const acctRec = getMergedAccounts().find(a => a.reporting_account === STATE.trendFocus.key);
     if (acctRec) focusedCat = normCat(acctRec.category);
   }
 
@@ -6404,7 +6619,7 @@ function renderBvaVariances(){
   const effCo = typeof effectiveCompanySet === 'function' ? effectiveCompanySet() : null;
 
   const byCat = {};
-  DATA.accounts.forEach(a => {
+  getMergedAccounts().forEach(a => {
     const ra = a.reporting_account;
     const raNum = String(ra).replace(/C$/i,'');
     if (typeof shouldExcludeFromBva === 'function' && shouldExcludeFromBva(ra)) return;
@@ -6548,6 +6763,7 @@ function loadOverview(){
   if (fcView) fcView.style.display = 'none';
   if (ctView) ctView.style.display = 'none';
   if (calView) calView.style.display = 'none';
+  hideReclassView();
   if (filterbar) filterbar.style.display = 'none';
   if (vmBar) vmBar.style.display = 'none';
   if (ovView) ovView.style.display = 'flex';
@@ -7304,6 +7520,190 @@ async function hydrateCategoriesFromServer(slug){
     if (ACTIVE_SLUG === slug && typeof render === 'function') render();
   } catch(e){}
 }
+
+// ---- Reclass suggestions ----
+// Separate from the categories system above, but same shape of idea: a per-transaction
+// annotation shared across everyone via GitHub (functions/api/reclass.js). Unlike categories,
+// there's no local-dirty-then-save step -- each suggestion is an explicit, immediate action
+// (create or delete), so we just hydrate once at bootstrap and optimistically merge on write.
+let RECLASS = { suggestions: {}, loaded: false };
+async function hydrateReclassFromServer(){
+  try {
+    const r = await fetch('/api/reclass', { credentials: 'include', cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || j.error) return;
+    RECLASS.suggestions = j.suggestions || {};
+    RECLASS.loaded = true;
+    if (typeof invalidateReclassMemo === 'function') invalidateReclassMemo();
+    if (typeof render === 'function' && DATA) render();
+    if (typeof renderReclassView === 'function' && ACTIVE_SLUG === 'reclass') renderReclassView();
+  } catch(e){}
+}
+function genReclassId(){ return 'rc-' + Date.now() + '-' + Math.floor(Math.random()*1000); }
+async function submitReclassSuggestion(suggestion){
+  const id = suggestion.id || genReclassId();
+  const full = { ...suggestion, id };
+  const r = await fetch('/api/reclass', {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'upsert', slug: full.slug, suggestion: full }),
+  });
+  if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+  RECLASS.suggestions[id] = full;
+  if (typeof invalidateReclassMemo === 'function') invalidateReclassMemo();
+  reclassRefreshCurrentView();
+  return full;
+}
+async function deleteReclassSuggestion(slug, id){
+  const r = await fetch('/api/reclass', {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'delete', slug, id }),
+  });
+  if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+  delete RECLASS.suggestions[id];
+  if (typeof invalidateReclassMemo === 'function') invalidateReclassMemo();
+  reclassRefreshCurrentView();
+}
+// render() assumes a data tab is active (DATA loaded) and throws otherwise -- calling it
+// unconditionally from here would silently abort whichever refresh runs after it (e.g. the
+// Reclass Suggestions summary table never updating post-delete) since render()'s exception
+// propagates up through this async function with nothing downstream to catch it.
+function reclassRefreshCurrentView(){
+  if (ACTIVE_SLUG === 'reclass'){ if (typeof renderReclassView === 'function') renderReclassView(); return; }
+  if (DATA && typeof render === 'function') render();
+}
+
+let _rcModalCtx = null;
+function openReclassModal(btnEl){
+  const ctx = JSON.parse(btnEl.dataset.rcCtx);
+  ctx.slug = ACTIVE_SLUG;
+  ctx.vendor_key = normKey(ctx.display);
+  _rcModalCtx = ctx;
+
+  document.getElementById('rc-summary').textContent =
+    `${ctx.display} · ${fmtUSD(ctx.amount)} · ${FM_LABELS[ctx.fm-1]} FY${ctx.fy-2000} · ${ctx.ra}`;
+
+  // If a suggestion already targets this exact (account, month, vendor) bucket, reuse/edit it
+  // instead of creating a second one -- two independent suggestions on the same underlying
+  // dollars would double-move them in the "after" overlay.
+  const existing = Object.values(RECLASS.suggestions || {}).find(s =>
+    s.slug === ctx.slug && s.from_account === ctx.ra && s.fy === ctx.fy && s.fm === ctx.fm && s.vendor_key === ctx.vendor_key);
+  document.getElementById('rc-existing-note').style.display = existing ? '' : 'none';
+  _rcModalCtx.existingId = existing ? existing.id : null;
+
+  const accSel = document.getElementById('rc-account');
+  accSel.innerHTML = '';
+  const seenRA = new Set();
+  (DATA.accounts || []).forEach(a => {
+    const ra = a.reporting_account;
+    if (seenRA.has(ra)) return; seenRA.add(ra);
+    const opt = document.createElement('option');
+    opt.value = ra; opt.textContent = ra + (a.account_name && a.account_name !== ra ? ' — ' + a.account_name : '');
+    accSel.appendChild(opt);
+  });
+  accSel.appendChild(new Option('Other (type below)', '__other__'));
+  document.getElementById('rc-account-other').style.display = 'none';
+  document.getElementById('rc-account-other').value = '';
+
+  const coSel = document.getElementById('rc-company');
+  coSel.innerHTML = '';
+  coSel.appendChild(new Option('— none —', ''));
+  Object.entries((DATA.meta && DATA.meta.source_company_map) || {}).sort((a,b) => (+a[0])-(+b[0])).forEach(([code,name]) => {
+    coSel.appendChild(new Option(name, code));
+  });
+  coSel.appendChild(new Option('Other (type below)', '__other__'));
+  document.getElementById('rc-company-other').style.display = 'none';
+  document.getElementById('rc-company-other').value = '';
+
+  const tagSel = document.getElementById('rc-tag');
+  tagSel.innerHTML = '';
+  tagSel.appendChild(new Option('— none —', ''));
+  const cats = (typeof loadUserCategories === 'function' ? loadUserCategories(ctx.slug).categories : []) || [];
+  cats.slice().sort((a,b) => a.name.localeCompare(b.name)).forEach(c => tagSel.appendChild(new Option(c.name, c.id)));
+  tagSel.appendChild(new Option('+ New tag', '__new__'));
+  document.getElementById('rc-tag-new').style.display = 'none';
+  document.getElementById('rc-tag-new').value = '';
+
+  document.getElementById('rc-dept').value = '';
+  document.getElementById('rc-note').value = '';
+
+  if (existing){
+    if ([...accSel.options].some(o => o.value === existing.to_account)) accSel.value = existing.to_account;
+    else {
+      accSel.value = '__other__';
+      document.getElementById('rc-account-other').style.display = '';
+      document.getElementById('rc-account-other').value = existing.to_account + (existing.to_account_name ? (' — ' + existing.to_account_name) : '');
+    }
+    document.getElementById('rc-dept').value = existing.to_department || '';
+    if (existing.to_company != null && existing.to_company !== ''){
+      if ([...coSel.options].some(o => o.value === String(existing.to_company))) coSel.value = String(existing.to_company);
+      else {
+        coSel.value = '__other__';
+        document.getElementById('rc-company-other').style.display = '';
+        document.getElementById('rc-company-other').value = existing.to_company;
+      }
+    }
+    if (existing.to_tag_id) tagSel.value = existing.to_tag_id;
+    document.getElementById('rc-note').value = existing.note || '';
+  }
+
+  document.getElementById('reclass-modal').classList.add('open');
+}
+function closeReclassModal(){
+  document.getElementById('reclass-modal').classList.remove('open');
+  _rcModalCtx = null;
+}
+async function submitReclassForm(){
+  if (!_rcModalCtx) return;
+  const ctx = _rcModalCtx;
+  const accSel = document.getElementById('rc-account');
+  let toAccount = accSel.value, toAccountName = null;
+  if (toAccount === '__other__'){
+    const raw = document.getElementById('rc-account-other').value.trim();
+    if (!raw){ alert('Enter a GL account.'); return; }
+    const m = raw.match(/^(\S+)\s*[-—]?\s*(.*)$/);
+    toAccount = m ? m[1] : raw;
+    toAccountName = (m && m[2]) ? m[2] : null;
+  }
+  if (!toAccount){ alert('Choose or enter a GL account.'); return; }
+
+  const coSel = document.getElementById('rc-company');
+  let toCompany = coSel.value === '__other__' ? document.getElementById('rc-company-other').value.trim() : coSel.value;
+
+  const tagSel = document.getElementById('rc-tag');
+  let toTagId = tagSel.value;
+  if (toTagId === '__new__'){
+    const name = document.getElementById('rc-tag-new').value.trim();
+    toTagId = name ? (ucAddCategory(ctx.slug, name) || {}).id || '' : '';
+  }
+
+  const suggestion = {
+    id: ctx.existingId || genReclassId(),
+    slug: ctx.slug,
+    from_account: ctx.ra, from_account_name: null, fy: ctx.fy, fm: ctx.fm,
+    from_company: null, from_channel: null,
+    vendor_key: ctx.vendor_key, display_snapshot: ctx.display, amount_snapshot: ctx.amount,
+    to_account: toAccount, to_account_name: toAccountName,
+    to_department: document.getElementById('rc-dept').value.trim() || null,
+    to_company: toCompany || null,
+    to_tag_id: toTagId || null,
+    note: document.getElementById('rc-note').value.trim() || null,
+  };
+
+  const btn = document.getElementById('rc-submit-btn');
+  btn.disabled = true;
+  try {
+    await submitReclassSuggestion(suggestion);
+    closeReclassModal();
+  } catch(e){
+    alert('Failed to save suggestion: ' + (e && e.message || e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function ucNormDesc(desc){ return String(desc||'').trim().toLowerCase(); }
 function ucGetCategoryForDescAcct(slug, desc, account){
   const d = ucNormDesc(desc);
@@ -8715,6 +9115,117 @@ function hideCalendarView(){
   if (cv) cv.style.display = 'none';
 }
 
+function hideReclassView(){
+  const rv = document.getElementById('reclass-view');
+  if (rv) rv.style.display = 'none';
+}
+function loadReclassView(){
+  STATE.viewMode = 'bva';
+  STATE.subSection = null;
+  // Not hideOverviewView() -- that function's job is to RESTORE the BvA grid/filterbar when
+  // leaving Overview mode, so calling it here would un-hide the very things we're hiding below.
+  const ovView = document.getElementById('overview-view');
+  if (ovView) ovView.style.display = 'none';
+  hideForecastPane();
+  hideContactsView();
+  hideCalendarView();
+  const bvBody = document.getElementById('bva-body');
+  if (bvBody) bvBody.style.display = 'none';
+  const filterbar = document.querySelector('.filterbar');
+  if (filterbar) filterbar.style.display = 'none';
+  const vmBar = document.getElementById('view-mode-bar');
+  if (vmBar) vmBar.style.display = 'none';
+  const av = document.getElementById('admin-view');
+  if (av) av.style.display = 'none';
+
+  // ACTIVE_SLUG here is only for view-routing (which panel is on screen) -- never for
+  // permission checks. Each suggestion row carries its own slug and is gated on that.
+  ACTIVE_SLUG = 'reclass';
+  document.querySelectorAll('.sb-tab').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
+  document.getElementById('sb-reclass-tab').classList.add('active');
+  const breadcrumb = document.getElementById('breadcrumb-area');
+  if (breadcrumb) breadcrumb.style.display = 'none';
+  document.getElementById('page-title').textContent = 'Reclass Suggestions';
+  document.getElementById('dept-sub').textContent = 'Every suggested reclass across every tab';
+
+  const rv = document.getElementById('reclass-view');
+  if (rv) rv.style.display = 'flex';
+
+  if (!RECLASS.loaded){
+    hydrateReclassFromServer().then(() => renderReclassView());
+  }
+  renderReclassView();
+}
+function reclassTabLabel(slug){
+  const t = (MANIFEST && MANIFEST.tabs || []).find(x => x.slug === slug);
+  return t ? t.name : slug;
+}
+function renderReclassView(){
+  const content = document.getElementById('reclass-content');
+  if (!content) return;
+  const all = Object.values(RECLASS.suggestions || {});
+  if (!all.length){
+    content.innerHTML = '<div class="empty-state">No reclass suggestions yet. Hover a transaction on any Month-view tab and click "Suggest Reclass" to add one.</div>';
+    return;
+  }
+
+  const slugs = [...new Set(all.map(s => s.slug))].sort();
+  const fys = [...new Set(all.map(s => s.fy))].sort((a,b) => b - a);
+  const filterSlug = RC_VIEW_STATE.slug, filterFy = RC_VIEW_STATE.fy;
+  const rows = all
+    .filter(s => !filterSlug || s.slug === filterSlug)
+    .filter(s => !filterFy || s.fy === filterFy)
+    .sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+
+  const tagNameFor = (slug, tagId) => {
+    if (!tagId) return '—';
+    const cats = (typeof loadUserCategories === 'function' ? loadUserCategories(slug).categories : []) || [];
+    const c = cats.find(x => x.id === tagId);
+    return c ? c.name : tagId;
+  };
+  const coName = c => (c == null || c === '') ? '—' : ((DATA && DATA.meta && DATA.meta.source_company_map && DATA.meta.source_company_map[c]) || ('Co ' + c));
+
+  let h = '<div class="card"><div class="card-h">Reclass Suggestions<span class="meta">' + rows.length + ' of ' + all.length + '</span></div>';
+  h += '<div style="padding:10px 18px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border)">';
+  h += '<select id="rc-view-slug" onchange="RC_VIEW_STATE.slug=this.value||null; renderReclassView()" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px">';
+  h += '<option value="">All tabs</option>' + slugs.map(s => `<option value="${s}" ${filterSlug===s?'selected':''}>${reclassTabLabel(s)}</option>`).join('');
+  h += '</select>';
+  h += '<select id="rc-view-fy" onchange="RC_VIEW_STATE.fy=this.value?+this.value:null; renderReclassView()" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px">';
+  h += '<option value="">All years</option>' + fys.map(f => `<option value="${f}" ${filterFy===f?'selected':''}>FY${f-2000}</option>`).join('');
+  h += '</select></div>';
+
+  h += '<div style="padding:0 18px 14px"><table class="bva"><thead><tr>';
+  ['Tab','Period','Vendor / Description','From','To','Tag','Amount','Suggested by',''].forEach(c => h += `<th${c==='Amount'?' class="num"':''}>${c}</th>`);
+  h += '</tr></thead><tbody>';
+  rows.forEach(s => {
+    const stale = s._stale ? ' <span style="color:#b45309;font-size:10px">(no longer matches current data)</span>' : '';
+    const fromLbl = `${s.from_account}${s.from_account_name ? ' — ' + s.from_account_name : ''}${s.from_company!=null?' · '+coName(s.from_company):''}`;
+    const toLbl = `${s.to_account}${s.to_account_name ? ' — ' + s.to_account_name : ''}${s.to_department?' · Dept '+s.to_department:''}${s.to_company!=null&&s.to_company!==''?' · '+coName(s.to_company):''}`;
+    const when = s.created_at ? new Date(s.created_at).toLocaleDateString() : '—';
+    const canDelete = (typeof authCan === 'function') ? authCan(s.slug, 'tag') : true;
+    const delBtn = canDelete ? `<button class="btn-sm" onclick="reclassDeletePrompt('${s.slug}','${s.id}')">Delete</button>` : '';
+    h += `<tr>
+      <td>${reclassTabLabel(s.slug)}</td>
+      <td>${FM_LABELS[s.fm-1]} FY${s.fy-2000}</td>
+      <td>${(s.display_snapshot||'').replace(/</g,'&lt;')}${s.note ? `<div style="font-size:10.5px;color:var(--gray)">${s.note.replace(/</g,'&lt;')}</div>` : ''}${stale}</td>
+      <td>${fromLbl}</td>
+      <td>${toLbl}</td>
+      <td>${tagNameFor(s.slug, s.to_tag_id)}</td>
+      <td class="num">${fmtUSD(s.amount_snapshot)}</td>
+      <td>${s.created_by||'—'}<div style="font-size:10.5px;color:var(--gray)">${when}</div></td>
+      <td>${delBtn}</td>
+    </tr>`;
+  });
+  h += '</tbody></table></div></div>';
+  content.innerHTML = h;
+}
+const RC_VIEW_STATE = { slug: null, fy: null };
+function reclassDeletePrompt(slug, id){
+  if (!confirm('Delete this reclass suggestion? This can\'t be undone.')) return;
+  deleteReclassSuggestion(slug, id).catch(e => alert('Failed to delete: ' + (e && e.message || e)));
+}
+
 function loadContacts(){
   STATE.subSection = null;
   ACTIVE_SLUG = 'contacts';
@@ -10044,7 +10555,7 @@ function computeTopVariances(data, fy, verKey, throughFm, ovView, limit){
 async function loadAdmin(){
   if (!authIsAdmin()){ alert('Admin role required.'); return; }
   STATE.viewMode = 'admin';
-  ['bva-body','contacts-view','overview-view','calendar-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  ['bva-body','contacts-view','overview-view','calendar-view','reclass-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   const filterbar = document.querySelector('.filterbar');
   if (filterbar) filterbar.style.display = 'none';
   const vmb = document.getElementById('view-mode-bar');
