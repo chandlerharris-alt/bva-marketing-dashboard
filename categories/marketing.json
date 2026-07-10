@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-07-10T17:54:12.086Z",
+  "_last_updated": "2026-07-10T17:56:38.273Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "marketing",
   "categories": [
@@ -177,6 +177,9 @@
       "acquia (dam/athena)": "uc-1783705935692-437",
       "qualtrics": "uc-1783547305173-345",
       "branch": "uc-1781098692041-252"
+    },
+    "8941000": {
+      "skai (kenshoo)": "uc-1783705889389-855"
     }
   }
 }
