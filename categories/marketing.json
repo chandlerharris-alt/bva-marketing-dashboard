@@ -1,6 +1,6 @@
 {
-  "_last_updated": "2026-07-08T22:37:50.756Z",
-  "_last_updated_by": "chandler.harris@ifit.com",
+  "_last_updated": "2026-07-10T17:54:12.086Z",
+  "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "marketing",
   "categories": [
     {
@@ -107,6 +107,16 @@
       "id": "uc-1783547305173-345",
       "name": "Qualtrics",
       "color": "#fde68a"
+    },
+    {
+      "id": "uc-1783705889389-855",
+      "name": "Skai",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1783705935692-437",
+      "name": "Acquia DAM",
+      "color": "#bbf7d0"
     }
   ],
   "descToCategory": {},
@@ -159,7 +169,14 @@
       "impact reclass": "uc-1781098735166-532",
       "52311 twilio  amort": "uc-1781098673248-843",
       "neustar information recla": "uc-1781098723821-836",
-      "57305   neustar informati": "uc-1781098723821-836"
+      "57305   neustar informati": "uc-1781098723821-836",
+      "54414 kenshoo amort accru": "uc-1783705889389-855",
+      "mta and mmm analytics tool": "uc-1781098729034-349",
+      "seo tool": "uc-1781101111537-868",
+      "customer data platform": "uc-1781098707653-986",
+      "acquia (dam/athena)": "uc-1783705935692-437",
+      "qualtrics": "uc-1783547305173-345",
+      "branch": "uc-1781098692041-252"
     }
   }
 }
