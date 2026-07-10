@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-07-10T17:33:15.192Z",
+  "_last_updated": "2026-07-10T21:51:21.540Z",
   "_last_updated_by": "megan.bitton@ifit.com",
   "slug": "media",
   "categories": [
@@ -24,11 +24,6 @@
       "color": "#fbcfe8"
     },
     {
-      "id": "uc-1783704214299-287",
-      "name": "Non-Brand Paid Search",
-      "color": "#ddd6fe"
-    },
-    {
       "id": "uc-1783704223659-85",
       "name": "Affiliate",
       "color": "#fed7aa"
@@ -42,11 +37,6 @@
       "id": "uc-1783704279044-378",
       "name": "Influencers",
       "color": "#fecaca"
-    },
-    {
-      "id": "uc-1783704286218-872",
-      "name": "Brand Paid Search",
-      "color": "#d9f99d"
     },
     {
       "id": "uc-1783704317477-100",
@@ -87,23 +77,28 @@
       "id": "uc-1783704781602-630",
       "name": "OTT - Pilates",
       "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1783715562380-608",
+      "name": "Paid Search",
+      "color": "#a5f3fc"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
     "6736000": {
       "paid social": "uc-1783704197218-305",
-      "non-brand paid search": "uc-1783704214299-287",
       "impact": "uc-1783704223659-85",
       "llm": "uc-1783704271495-284",
       "influencers": "uc-1783704279044-378",
-      "brand paid search": "uc-1783704286218-872",
       "tradedesk": "uc-1783704317477-100",
       "olv": "uc-1783704321758-540",
       "postie": "uc-1783704330013-867",
       "pilates paid media": "uc-1783704339415-632",
       "seo": "uc-1783704347296-160",
-      "subs advertising": "uc-1783704759263-940"
+      "subs advertising": "uc-1783704759263-940",
+      "non-brand paid search": "uc-1783715562380-608",
+      "brand paid search": "uc-1783715562380-608"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
