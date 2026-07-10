@@ -31,7 +31,8 @@ export function normalizeEntry(entry){
 export async function getAccess(context, email){
   const access = await loadAccessJson(context);
   const users = access.users || {};
-  const raw = users[(email || '').toLowerCase()] || users[email] || access._default_for_unlisted_users || null;
+  const emailKey = (email || '').trim().toLowerCase();
+  const raw = users[emailKey] || users[(email || '').trim()] || users[email] || access._default_for_unlisted_users || null;
   return normalizeEntry(raw);
 }
 

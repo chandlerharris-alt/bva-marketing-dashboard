@@ -13,13 +13,18 @@ export const onRequestGet = async (context) => {
   try {
     const url = new URL(context.request.url);
     url.pathname = '/access.json';
-    const res = await context.env.ASSETS.fetch(url.toString());
+    // cacheTtl:0 — without this, ASSETS.fetch can serve a cached copy of access.json from
+    // before the latest admin save, so a newly-granted user still gets the unlisted-user
+    // default (no tabs) even after a fresh deploy. _access.js (used by every other endpoint)
+    // already disables caching here; this endpoint had been missing it.
+    const res = await context.env.ASSETS.fetch(url.toString(), { cf: { cacheTtl: 0 } });
     if (res.ok) access = await res.json();
   } catch(e){ /* fall through to default */ }
 
   const users = (access && access.users) || {};
   const fallback = (access && access._default_for_unlisted_users) || null;
-  const raw = users[user.email.toLowerCase()] || users[user.email] || fallback;
+  const emailKey = user.email.trim().toLowerCase();
+  const raw = users[emailKey] || users[user.email.trim()] || users[user.email] || fallback;
   const norm = normalizeEntry(raw);
 
   return json({
