@@ -1287,7 +1287,7 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
     return Promise.all([loadVersionVisibility(), loadRevAop()]).then(() =>
       fetch('../data/manifest.json', {cache:'no-store'}).then(r => r.json()));
   })
-  .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); })
+  .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); filterSidebarByAccess(); })
   .catch(err => { document.getElementById('bva-wrap').innerHTML = '<div class="spinner">Failed to load manifest: '+err+'</div>'; });
 
 function renderSidebar(){
@@ -9658,7 +9658,13 @@ function authVersionAllowed(baseVer){
 function authCanSeeSlug(slug){ return authCanSee(slug); }
 function authCanEdit(){ return authCan(ACTIVE_SLUG, 'tag') || authCan(ACTIVE_SLUG, 'forecast'); }
 function applyAuthToUi(){
-  const isGranted = AUTH_STATE.admin || (MANIFEST?.tabs||[]).some(t => authCanSee(t.slug));
+  // Don't gate this on MANIFEST — /api/me (1 round trip) almost always resolves before the
+  // manifest chain (_domain_config -> version-visibility/rev-aop -> manifest.json, 3 round
+  // trips), so checking MANIFEST.tabs here saw an empty/null MANIFEST and treated every
+  // non-admin, fully-tab-granted user as having zero access, locking them out entirely. A
+  // user's own AUTH_STATE.tabs is sufficient to answer "were they granted anything at all."
+  const hasAnyGrantedTab = Object.values(AUTH_STATE.tabs || {}).some(c => c && (c.view || c.tag || c.comment || c.forecast || c.insight));
+  const isGranted = AUTH_STATE.admin || hasAnyGrantedTab;
   if (!isGranted){ renderAccessDenied(); return; }
   const badge = document.getElementById('user-badge');
   if (badge){
