@@ -104,6 +104,11 @@
         }
       },
       "versions": "*"
+    },
+    "dan.crooks@ifit.com": {
+      "admin": true,
+      "tabs": {},
+      "versions": "*"
     }
   },
   "_default_for_unlisted_users": {
