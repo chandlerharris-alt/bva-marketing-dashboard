@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-07-10T03:48:20.722Z",
+  "_last_updated": "2026-07-10T03:51:30.907Z",
   "_last_updated_by": "michael.doran@ifit.com",
   "slug": "media",
   "categories": [
@@ -7,10 +7,29 @@
       "id": "uc-1783655155133-408",
       "name": "freelancer",
       "color": "#fde68a"
+    },
+    {
+      "id": "uc-1783655433879-480",
+      "name": "US Ski & Snow",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1783655453583-877",
+      "name": "CMC",
+      "color": "#bbf7d0"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
+    "6763000": {
+      "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
+      "us ski & snow accrual": "uc-1783655433879-480",
+      "christian mccaffrey - production": "uc-1783655453583-877",
+      "52930 mccaffe amort": "uc-1783655453583-877",
+      "mccaffery": "uc-1783655453583-877",
+      "christian mccaffrey - fee fy26": "uc-1783655453583-877",
+      "us ski & snowboard - activation": "uc-1783655433879-480"
+    },
     "6775000": {
       "freelancer": "uc-1783655155133-408",
       "153805   emily doenges": "uc-1783655155133-408",
