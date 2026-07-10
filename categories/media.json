@@ -1,6 +1,6 @@
 {
-  "_last_updated": "2026-07-10T03:51:30.907Z",
-  "_last_updated_by": "michael.doran@ifit.com",
+  "_last_updated": "2026-07-10T17:33:15.192Z",
+  "_last_updated_by": "megan.bitton@ifit.com",
   "slug": "media",
   "categories": [
     {
@@ -17,10 +17,98 @@
       "id": "uc-1783655453583-877",
       "name": "CMC",
       "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1783704197218-305",
+      "name": "Paid Social",
+      "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1783704214299-287",
+      "name": "Non-Brand Paid Search",
+      "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1783704223659-85",
+      "name": "Affiliate",
+      "color": "#fed7aa"
+    },
+    {
+      "id": "uc-1783704271495-284",
+      "name": "LLM",
+      "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1783704279044-378",
+      "name": "Influencers",
+      "color": "#fecaca"
+    },
+    {
+      "id": "uc-1783704286218-872",
+      "name": "Brand Paid Search",
+      "color": "#d9f99d"
+    },
+    {
+      "id": "uc-1783704317477-100",
+      "name": "Display",
+      "color": "#e9d5ff"
+    },
+    {
+      "id": "uc-1783704321758-540",
+      "name": "OLV",
+      "color": "#fde68a"
+    },
+    {
+      "id": "uc-1783704330013-867",
+      "name": "Direct Mail",
+      "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1783704339415-632",
+      "name": "Pilates",
+      "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1783704347296-160",
+      "name": "SEO",
+      "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1783704759263-940",
+      "name": "Subs Advertising",
+      "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1783704770063-391",
+      "name": "OTT",
+      "color": "#fed7aa"
+    },
+    {
+      "id": "uc-1783704781602-630",
+      "name": "OTT - Pilates",
+      "color": "#a5f3fc"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
+    "6736000": {
+      "paid social": "uc-1783704197218-305",
+      "non-brand paid search": "uc-1783704214299-287",
+      "impact": "uc-1783704223659-85",
+      "llm": "uc-1783704271495-284",
+      "influencers": "uc-1783704279044-378",
+      "brand paid search": "uc-1783704286218-872",
+      "tradedesk": "uc-1783704317477-100",
+      "olv": "uc-1783704321758-540",
+      "postie": "uc-1783704330013-867",
+      "pilates paid media": "uc-1783704339415-632",
+      "seo": "uc-1783704347296-160",
+      "subs advertising": "uc-1783704759263-940"
+    },
+    "6740000": {
+      "usa + can ott": "uc-1783704770063-391",
+      "us + can - pilates ott": "uc-1783704781602-630"
+    },
     "6763000": {
       "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
       "us ski & snow accrual": "uc-1783655433879-480",
