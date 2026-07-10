@@ -793,6 +793,7 @@ def main():
             "vendor": r.get("vendor_name"), "customer": r.get("customer_name"),
             "invoice": r.get("invoice_number"), "comments": r.get("gl_comments"),
             "channel": (r.get("channel") or "").strip() or None,   # for channel-filtered drill (media)
+            "transaction_type": (r.get("transaction_type") or "").strip() or None,
             "amount": r.get("amount") or 0.0,
         })
 

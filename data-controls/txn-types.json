@@ -1,0 +1,17 @@
+{
+  "_saved_by": "chandler.harris@ifit.com",
+  "_saved_at": "2026-07-10T00:00:00.000Z",
+  "mappings": {
+    "ACCRUAL": "Accrual",
+    "JE": "JE",
+    "REVERSING ENTRY": "Reversal",
+    "AP-IN": "Invoice",
+    "AP-AJ": "JE",
+    "DM-AJ": "JE",
+    "PO-PR": "Invoice",
+    "18": "Invoice",
+    "30": "JE",
+    "46": "Invoice",
+    "13": "Invoice"
+  }
+}

@@ -556,6 +556,7 @@ tr:hover .fc-del-icon{opacity:1}
 .uc-chip:hover{filter:brightness(.95)}
 .uc-chip.uc-empty{background:#fff; color:var(--gray); border:1px dashed var(--border); font-weight:500}
 .uc-chip.uc-empty:hover{background:#fafcff; color:var(--navy); border-color:var(--cyan)}
+.txn-type-chip{display:inline-block; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:600; margin-left:6px; white-space:nowrap; vertical-align:middle}
 .reclass-btn{visibility:hidden; display:inline-block; margin-left:6px; font-size:10px; padding:1px 8px; border-radius:10px; border:1px dashed var(--border); background:#fff; color:var(--gray); cursor:pointer; white-space:nowrap; vertical-align:middle}
 .reclass-btn:hover{background:#fafcff; color:var(--navy); border-color:var(--cyan)}
 tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibility:visible}
@@ -661,12 +662,15 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
        sidebar (margin-top:auto in a flex column pushes it + everything after it down) so it
        doesn't get buried under a long tab list. -->
   <div id="sb-admin-wrap" style="display:none; margin-top:auto; padding-top:12px">
-    <div class="sb-section-h">Admin</div>
-    <div class="sb-tabs">
-      <div class="sb-tab" id="sb-admin-tab" data-slug="admin" onclick="loadAdmin()">
-        <div>User Access</div>
-        <div class="owner">Manage permissions</div>
+    <div class="sb-tab" id="sb-admin-toggle" onclick="toggleAdminDropdown()">
+      <div class="sb-tab-parent">
+        <div style="text-transform:uppercase; font-size:9.5px; letter-spacing:.6px; color:rgba(255,255,255,.35); font-weight:600">Admin</div>
+        <span class="sb-chevron">&#9658;</span>
       </div>
+    </div>
+    <div class="sb-children" id="sb-admin-children">
+      <div class="sb-child" id="sb-admin-tab" data-slug="admin" onclick="loadAdmin()">Users</div>
+      <div class="sb-child" id="sb-datacontrols-tab" data-slug="data-controls" onclick="loadDataControlsView()">Data Controls</div>
     </div>
   </div>
   <div class="sb-meta">
@@ -920,6 +924,11 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
   <!-- ===== Reclass Suggestions view ===== -->
   <div id="reclass-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
     <div id="reclass-content"><div class="spinner">Loading…</div></div>
+  </div>
+
+  <!-- ===== Data Controls view (Admin) ===== -->
+  <div id="data-controls-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
+    <div id="data-controls-content"><div class="spinner">Loading…</div></div>
   </div>
 
   <!-- ===== Contacts view ===== -->
@@ -1346,6 +1355,7 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
 // Reclass suggestions span every tab (the summary tab and the before/after toggle both need
 // the full list regardless of which tab is active), so hydrate once here rather than per-loadTab().
 hydrateReclassFromServer();
+hydrateTxnTypesFromServer();
 
 function renderSidebar(){
   const el = document.getElementById('sb-tabs');
@@ -1456,6 +1466,7 @@ function loadTab(slug){
   hideContactsView();
   hideCalendarView();
   hideReclassView();
+  hideDataControlsView();
   const av = document.getElementById('admin-view');
   if (av) av.style.display = 'none';
 
@@ -1469,6 +1480,10 @@ function loadTab(slug){
     d.style.opacity = (isCurrent && STATE.subSection) ? '1' : '';
   });
   document.getElementById('sb-overview-tab').classList.remove('active');
+  // Region sub-children set their own .active on click, but nothing previously cleared it when
+  // leaving entirely for a different top-level tab (or for the Admin dropdown's Users/Data
+  // Controls children) -- so a stale item could stay highlighted after navigating away.
+  if (!STATE.subSection) document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
 
   const allTabs = [...(MANIFEST.tabs||[])];
   const tab = allTabs.find(t => t.slug === slug);
@@ -3933,8 +3948,9 @@ function expansionHTML(a){
     const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
     const k = normKey(display) || 'unknown';
     if (d.fy === STATE.fy){
-      if (!actAgg[k]) actAgg[k] = {key:k, display, amount:0};
+      if (!actAgg[k]) actAgg[k] = {key:k, display, amount:0, txnTypes:new Set()};
       actAgg[k].amount += d.amount;
+      if (d.transaction_type) actAgg[k].txnTypes.add(d.transaction_type);
     } else if (d.fy === STATE.fy - 1){
       if (!pyAgg[k]) pyAgg[k] = {key:k, display, amount:0};
       pyAgg[k].amount += d.amount;
@@ -3981,7 +3997,8 @@ function expansionHTML(a){
     else if (!inFc && inAc) status = 'unmatched-act';
     const expType = fcAggA[k]?.expense_type || fcAggB[k]?.expense_type || '';
     const isAmort = fcAggA[k]?._amortized || fcAggB[k]?._amortized || false;
-    recon.push({display, fA, fB, ac, py, status, expType, isAmort});
+    const txnTypes = actAgg[k]?.txnTypes;
+    recon.push({display, fA, fB, ac, py, status, expType, isAmort, txnTypes});
   }
   recon.sort((x,y) => Math.max(Math.abs(y.fA), Math.abs(y.fB), Math.abs(y.ac))
                     - Math.max(Math.abs(x.fA), Math.abs(x.fB), Math.abs(x.ac)));
@@ -4035,8 +4052,9 @@ function expansionHTML(a){
             ? `<span class="fc-type-badge prepaid" style="margin-left:6px">${r.isAmort?'Prepaid (spread)':'Prepaid'}</span>`
             : (r.expType ? `<span class="fc-type-badge expense" style="margin-left:6px">Expense</span>` : '');
           const rcBtn = (r.status !== 'unmatched-fc') ? reclassBtnHtml(a.reporting_account, r.display, r.ac) : '';
+          const ttChip = txnTypeChipHtml(r.txnTypes);
           return `<tr class="${r.status}">
-            <td>${r.display}${pillFor(r.status)}${typePill}${ucChipHtml(ACTIVE_SLUG, r.display, a.reporting_account)}${rcBtn}</td>
+            <td>${r.display}${pillFor(r.status)}${typePill}${ttChip}${ucChipHtml(ACTIVE_SLUG, r.display, a.reporting_account)}${rcBtn}</td>
             <td class="amt">${fmtUSD(r.fA)}</td>
             <td class="amt"><strong>${fmtUSD(r.ac)}</strong></td>
             <td class="amt ${cls}">${r.status === 'unmatched-fc' ? '—' : fmtUSD(vs)}</td>
@@ -4099,8 +4117,15 @@ function computeDrill(a){
     if (!coOk(d.source_company)) return; if (!chOk(d.channel)) return; if (!inPeriod(d.fm)) return;
     const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
     const k = normKey(display) || 'unknown';
-    if (d.fy===STATE.fy){ (actAgg[k] = actAgg[k] || {display, amount:0}).amount += d.amount; }
-    else if (d.fy===STATE.fy-1){ (pyAgg[k] = pyAgg[k] || {display, amount:0}).amount += d.amount; }
+    if (d.fy===STATE.fy){
+      const bucket = (actAgg[k] = actAgg[k] || {display, amount:0, txnTypes:new Set()});
+      bucket.amount += d.amount;
+      if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
+    } else if (d.fy===STATE.fy-1){
+      const bucket = (pyAgg[k] = pyAgg[k] || {display, amount:0, txnTypes:new Set()});
+      bucket.amount += d.amount;
+      if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
+    }
   });
   const fcAgg={};
   const verLines = (a.forecast_lines || []).filter(l => (l.version + ' | FY' + l.fy) === STATE.cmpA).map(l => Object.assign({}, l, {account:a.reporting_account}));
@@ -4131,9 +4156,9 @@ function computeDrill(a){
     c.buckets[src].push(Object.assign({display, amount}, extra || {}));
     c[src] += amount; c.count++;
   };
-  Object.values(pyAgg).forEach(x => addTxn('py', x.display, x.amount));
+  Object.values(pyAgg).forEach(x => addTxn('py', x.display, x.amount, {txnTypes:x.txnTypes}));
   Object.values(fcAgg).forEach(x => addTxn('plan', x.display, x.amount, {expType:x.expense_type||'', isAmort:x._amortized||false}));
-  Object.values(actAgg).forEach(x => addTxn('actual', x.display, x.amount));
+  Object.values(actAgg).forEach(x => addTxn('actual', x.display, x.amount, {txnTypes:x.txnTypes}));
   // Within each bucket order the transactions greatest -> least by magnitude.
   Object.values(catMap).forEach(c => ['py','plan','actual'].forEach(s => c.buckets[s].sort((x,y) => Math.abs(y.amount) - Math.abs(x.amount))));
   const cats = Object.values(catMap).sort((x,y) => {
@@ -4315,8 +4340,9 @@ function drillTxnRowHTML(a, c, src, t, isRev, parentCat){
   const cells = {py:'', plan:'', actual:''};
   cells[src] = (src==='actual') ? `<strong>${fmtUSD(t.amount)}</strong>` : fmtUSD(t.amount);
   const rcBtn = (src==='actual') ? reclassBtnHtml(a.reporting_account, t.display, t.amount) : '';
+  const ttChip = txnTypeChipHtml(t.txnTypes);
   return `<tr class="drill-txn-row" data-acct="${a.reporting_account}" data-catid="${idAttr}" data-src="${src}" data-parent-cat="${parentCat}" style="display:none;background:#f4f8fd;font-size:11.5px">
-    <td style="padding-left:84px">${dsp}${typePill} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}${rcBtn}</td>
+    <td style="padding-left:84px">${dsp}${typePill}${ttChip} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}${rcBtn}</td>
     <td class="num section-val">${cells.py}</td>
     <td class="num section-val">${cells.plan}</td>
     <td class="num section-val">${cells.actual}</td>
@@ -6764,6 +6790,7 @@ function loadOverview(){
   if (ctView) ctView.style.display = 'none';
   if (calView) calView.style.display = 'none';
   hideReclassView();
+  hideDataControlsView();
   if (filterbar) filterbar.style.display = 'none';
   if (vmBar) vmBar.style.display = 'none';
   if (ovView) ovView.style.display = 'flex';
@@ -7702,6 +7729,48 @@ async function submitReclassForm(){
   } finally {
     btn.disabled = false;
   }
+}
+
+// ---- Transaction-type tagging (automatic, GL-derived — not a user-assigned tag) ----
+// The raw GL TRANSACTION_TYPE code (AP-IN, JE, "30", ...) is mapped to one of 5 buckets by an
+// admin-managed lookup (see Data Controls tab), then rendered as a small color-coded pill next
+// to each transaction. Unmapped codes default to "Other" until an admin tags them.
+const TXN_TYPE_BUCKETS = ['Invoice','Accrual','Reversal','JE','Other'];
+const TXN_TYPE_COLORS = {
+  Invoice:  { bg:'#dbeafe', fg:'#1e40af' },
+  Accrual:  { bg:'#fef3c7', fg:'#92400e' },
+  Reversal: { bg:'#fee2e2', fg:'#b91c1c' },
+  JE:       { bg:'#ede9fe', fg:'#6d28d9' },
+  Other:    { bg:'#f3f4f6', fg:'#4b5563' },
+};
+let TXN_TYPE_MAP = { mappings: {}, loaded: false };
+async function hydrateTxnTypesFromServer(){
+  try {
+    const r = await fetch('/api/txn-types', { credentials:'include', cache:'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || j.error) return;
+    TXN_TYPE_MAP.mappings = j.mappings || {};
+    TXN_TYPE_MAP.loaded = true;
+    if (typeof render === 'function' && DATA) render();
+    if (typeof renderDataControlsView === 'function' && ACTIVE_SLUG === 'data-controls') renderDataControlsView();
+  } catch(e){}
+}
+function txnTypeBucket(rawCode){
+  const code = (rawCode == null ? '' : String(rawCode)).trim();
+  if (!code) return 'Other';
+  return TXN_TYPE_MAP.mappings[code] || 'Other';
+}
+// txnTypesSet: a Set of raw TRANSACTION_TYPE strings seen on the transaction(s) this row
+// represents (usually one, since same-vendor-same-month lines are typically one type; a small
+// pill per distinct BUCKET renders if they genuinely differ).
+function txnTypeChipHtml(txnTypesSet){
+  if (!txnTypesSet || !txnTypesSet.size) return '';
+  const buckets = new Set([...txnTypesSet].map(txnTypeBucket));
+  return [...buckets].map(b => {
+    const c = TXN_TYPE_COLORS[b] || TXN_TYPE_COLORS.Other;
+    return ` <span class="txn-type-chip" style="background:${c.bg};color:${c.fg}" title="Transaction type: ${b}">${b}</span>`;
+  }).join('');
 }
 
 function ucNormDesc(desc){ return String(desc||'').trim().toLowerCase(); }
@@ -9119,6 +9188,10 @@ function hideReclassView(){
   const rv = document.getElementById('reclass-view');
   if (rv) rv.style.display = 'none';
 }
+function hideDataControlsView(){
+  const dv = document.getElementById('data-controls-view');
+  if (dv) dv.style.display = 'none';
+}
 function loadReclassView(){
   STATE.viewMode = 'bva';
   STATE.subSection = null;
@@ -9129,6 +9202,7 @@ function loadReclassView(){
   hideForecastPane();
   hideContactsView();
   hideCalendarView();
+  hideDataControlsView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');
@@ -10552,10 +10626,18 @@ function computeTopVariances(data, fy, verKey, throughFm, ovView, limit){
 // =====================================================================
 // ADMIN PAGE — manage access.json
 // =====================================================================
+function toggleAdminDropdown(open){
+  const parentEl = document.querySelector('#sb-admin-toggle .sb-tab-parent');
+  const childrenEl = document.getElementById('sb-admin-children');
+  const isOpen = childrenEl && childrenEl.classList.contains('open');
+  const next = (open !== undefined) ? open : !isOpen;
+  if (childrenEl) childrenEl.classList.toggle('open', next);
+  if (parentEl) parentEl.classList.toggle('open', next);
+}
 async function loadAdmin(){
   if (!authIsAdmin()){ alert('Admin role required.'); return; }
   STATE.viewMode = 'admin';
-  ['bva-body','contacts-view','overview-view','calendar-view','reclass-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  ['bva-body','contacts-view','overview-view','calendar-view','reclass-view','data-controls-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   const filterbar = document.querySelector('.filterbar');
   if (filterbar) filterbar.style.display = 'none';
   const vmb = document.getElementById('view-mode-bar');
@@ -10578,10 +10660,12 @@ async function loadAdmin(){
     });
   }
   admin.style.display = 'block';
-  document.getElementById('page-title').textContent = 'Admin — User Access';
+  document.getElementById('page-title').textContent = 'Admin — Users';
   document.getElementById('dept-sub').textContent = 'Manage who can see and edit each sidebar tab';
   document.querySelectorAll('.sb-tab').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
   document.getElementById('sb-admin-tab').classList.add('active');
+  toggleAdminDropdown(true);
   ACTIVE_SLUG = 'admin';
   admin.innerHTML = '<div class="spinner">Loading access list…</div>';
   let access = null;
@@ -10605,25 +10689,6 @@ function renderAdmin(access){
   ADM_TABS = tabs; ADM_VERSIONS = allBase;
   const cards = Object.entries(users).map(([email, entry]) => adminUserCardHtml(email, normalizeAccessEntry(entry), tabs, allBase)).join('');
 
-  // Global version-hide card (applies to everyone; per-user limits above further restrict individuals).
-  const gVerChips = allBase.length
-    ? allBase.map(b => `<label class="adm-chip ${!VERSION_HIDDEN.has(b)?'on':''}"><input type="checkbox" data-ver="${b.replace(/"/g,'&quot;')}" ${!VERSION_HIDDEN.has(b)?'checked':''}> ${b}</label>`).join('')
-    : '<span style="font-size:12px;color:var(--gray)">Open any data tab once, then return here to load the version list.</span>';
-  const versionsCard = `
-    <div class="card" style="max-width:1100px;margin-top:16px">
-      <div class="card-h">Forecast Versions (global)
-        <span class="meta">Hide versions from everyone's Compare dropdowns. Per-user limits (above) further restrict individuals.</span>
-      </div>
-      <div style="padding:14px 18px">
-        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
-          <button class="btn-sm" onclick="adminVersionsToggleAll(true)">Select all</button>
-          <button class="btn-sm" onclick="adminVersionsToggleAll(false)">Clear all</button>
-          <button class="btn-sm btn-primary" id="adm-ver-save-btn" onclick="adminSaveVersions()">Save Versions</button>
-          <span id="adm-ver-status" style="font-size:12px;color:var(--gray)"></span>
-        </div>
-        <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${gVerChips}</div>
-      </div>
-    </div>`;
   admin.innerHTML = `
     <div class="card" style="max-width:1100px">
       <div class="card-h">User Access
@@ -10643,14 +10708,166 @@ function renderAdmin(access){
         </p>
       </div>
     </div>
-    ${versionsCard}
   `;
   wireAdminCards(admin);
-  admin.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
-    cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
-  });
   // Fresh load from the server — nothing pending yet.
-  markAdminUsersClean(); markAdminVersionsClean();
+  markAdminUsersClean();
+}
+
+// ---- Data Controls (Admin) ----
+async function loadDataControlsView(){
+  if (!authIsAdmin()){ alert('Admin role required.'); return; }
+  STATE.viewMode = 'admin';
+  const ovView = document.getElementById('overview-view');
+  if (ovView) ovView.style.display = 'none';
+  hideForecastPane();
+  hideContactsView();
+  hideCalendarView();
+  hideReclassView();
+  const bvBody = document.getElementById('bva-body');
+  if (bvBody) bvBody.style.display = 'none';
+  const filterbar = document.querySelector('.filterbar');
+  if (filterbar) filterbar.style.display = 'none';
+  const vmBar = document.getElementById('view-mode-bar');
+  if (vmBar) vmBar.style.display = 'none';
+  const av = document.getElementById('admin-view');
+  if (av) av.style.display = 'none';
+
+  ACTIVE_SLUG = 'data-controls';
+  document.querySelectorAll('.sb-tab').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
+  document.getElementById('sb-datacontrols-tab').classList.add('active');
+  toggleAdminDropdown(true);
+  const breadcrumb = document.getElementById('breadcrumb-area');
+  if (breadcrumb) breadcrumb.style.display = 'none';
+  document.getElementById('page-title').textContent = 'Data Controls';
+  document.getElementById('dept-sub').textContent = 'Transaction type tagging + master version controls';
+
+  const dv = document.getElementById('data-controls-view');
+  if (dv) dv.style.display = 'flex';
+
+  if (!TXN_TYPE_MAP.loaded) await hydrateTxnTypesFromServer();
+  await renderDataControlsView();
+}
+
+let TXN_DISCOVERED = null;   // {code: {count, sample}} — independent of the currently-scoped DATA
+let DC_PENDING = {};         // staged edits: code -> bucket ('' = clear mapping)
+async function discoverTxnTypeCodes(){
+  if (TXN_DISCOVERED) return TXN_DISCOVERED;
+  const out = {};
+  try {
+    const r = await fetch('../data/marketing.json', { cache:'no-store' });
+    const d = await r.json();
+    // Fetch fresh + unscoped rather than reusing the shared DATA global -- DATA.accounts gets
+    // filtered in place per tab (scopeAccountsForTab), which would silently hide half the
+    // transaction types (advertising vs. non-advertising) depending on whichever tab happened
+    // to load last.
+    (d.accounts || []).forEach(a => {
+      (a.drill || []).forEach(l => {
+        const code = (l.transaction_type || '').trim() || '(blank)';
+        if (!out[code]) out[code] = { count: 0, sample: l.vendor || l.customer || (l.comments || '').slice(0, 40) };
+        out[code].count++;
+      });
+    });
+  } catch(e){}
+  TXN_DISCOVERED = out;
+  return TXN_DISCOVERED;
+}
+function markDcDirty(){ const b = document.getElementById('dc-save-btn'); if (b) b.classList.add('btn-save-dirty'); }
+function markDcClean(){ const b = document.getElementById('dc-save-btn'); if (b) b.classList.remove('btn-save-dirty'); }
+async function saveTxnTypeMappings(){
+  if (!Object.keys(DC_PENDING).length) return;
+  const btn = document.getElementById('dc-save-btn');
+  const status = document.getElementById('dc-status');
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/txn-types', {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mappings: DC_PENDING }),
+    });
+    if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+    Object.entries(DC_PENDING).forEach(([code, bucket]) => {
+      if (bucket) TXN_TYPE_MAP.mappings[code] = bucket; else delete TXN_TYPE_MAP.mappings[code];
+    });
+    DC_PENDING = {};
+    markDcClean();
+    if (status) status.textContent = 'Saved · ' + new Date().toLocaleTimeString();
+    if (typeof render === 'function' && DATA) render();   // pick up the new tag colors elsewhere
+    if (ACTIVE_SLUG === 'data-controls') renderDataControlsView();
+  } catch(e){
+    if (status) status.textContent = 'Save failed — retry';
+    alert('Failed to save: ' + (e && e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+async function renderDataControlsView(){
+  const content = document.getElementById('data-controls-content');
+  if (!content) return;
+  content.innerHTML = '<div class="spinner">Loading…</div>';
+  const discovered = await discoverTxnTypeCodes();
+  const codes = Object.keys(discovered).sort((a,b) => discovered[b].count - discovered[a].count);
+
+  const optionsHtml = (current) => TXN_TYPE_BUCKETS.map(b => `<option value="${b}" ${current===b?'selected':''}>${b}</option>`).join('')
+    + `<option value="" ${!current?'selected':''}>— unmapped (defaults to Other) —</option>`;
+
+  const rows = codes.map(code => {
+    const saved = TXN_TYPE_MAP.mappings[code] || '';
+    const mapped = DC_PENDING[code] !== undefined ? DC_PENDING[code] : saved;
+    const info = discovered[code];
+    const esc = String(code).replace(/"/g,'&quot;');
+    return `<tr style="${!saved ? 'background:#fffbeb' : ''}">
+      <td style="font-family:monospace;font-size:12px">${String(code).replace(/</g,'&lt;')}${!saved ? ' <span style="color:#b45309;font-size:10px">(new — needs tagging)</span>' : ''}</td>
+      <td style="font-size:11.5px;color:var(--gray)">${String(info.sample||'').replace(/</g,'&lt;')}</td>
+      <td class="num">${info.count.toLocaleString()}</td>
+      <td><select class="dc-bucket-select" data-code="${esc}" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${optionsHtml(mapped)}</select></td>
+    </tr>`;
+  }).join('');
+
+  const allBase = ADM_VERSIONS && ADM_VERSIONS.length ? ADM_VERSIONS
+    : [...new Set(((typeof DATA!=='undefined' && DATA && DATA.meta && DATA.meta.available_versions) || []).map(baseVersion))].sort();
+  const gVerChips = allBase.length
+    ? allBase.map(b => `<label class="adm-chip ${!VERSION_HIDDEN.has(b)?'on':''}"><input type="checkbox" data-ver="${b.replace(/"/g,'&quot;')}" ${!VERSION_HIDDEN.has(b)?'checked':''}> ${b}</label>`).join('')
+    : '<span style="font-size:12px;color:var(--gray)">Open any data tab once, then return here to load the version list.</span>';
+
+  content.innerHTML = `
+    <div class="card" style="max-width:1100px">
+      <div class="card-h">Transaction Type Tagging
+        <span class="meta">Maps the raw GL TRANSACTION_TYPE code to the color-coded tag shown on each transaction. New codes are highlighted below — tag them here.</span>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+          <button class="btn-sm btn-primary" id="dc-save-btn" onclick="saveTxnTypeMappings()">Save Mappings</button>
+          <span id="dc-status" style="font-size:12px;color:var(--gray)"></span>
+        </div>
+        <table class="bva"><thead><tr><th>Raw Code</th><th>Sample</th><th class="num">Count</th><th>Tag</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="color:var(--gray);padding:10px">No transaction data found.</td></tr>'}</tbody></table>
+      </div>
+    </div>
+    <div class="card" style="max-width:1100px;margin-top:16px">
+      <div class="card-h">Forecast Versions (global)
+        <span class="meta">Hide versions from everyone's Compare dropdowns. Per-user limits (on the Users tab) further restrict individuals.</span>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+          <button class="btn-sm" onclick="adminVersionsToggleAll(true)">Select all</button>
+          <button class="btn-sm" onclick="adminVersionsToggleAll(false)">Clear all</button>
+          <button class="btn-sm btn-primary" id="adm-ver-save-btn" onclick="adminSaveVersions()">Save Versions</button>
+          <span id="adm-ver-status" style="font-size:12px;color:var(--gray)"></span>
+        </div>
+        <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${gVerChips}</div>
+      </div>
+    </div>
+  `;
+  content.querySelectorAll('.dc-bucket-select').forEach(sel => {
+    sel.onchange = () => { DC_PENDING[sel.dataset.code] = sel.value; markDcDirty(); };
+  });
+  content.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
+    cb.onchange = () => { cb.closest('.adm-chip').classList.toggle('on', cb.checked); markAdminVersionsDirty(); };
+  });
+  markAdminVersionsClean();
 }
 function adminUserCardHtml(email, norm, tabs, allBase){
   const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast'],['insight','Insight']];
