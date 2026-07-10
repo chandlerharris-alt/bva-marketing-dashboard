@@ -84,6 +84,26 @@
       "admin": true,
       "tabs": {},
       "versions": "*"
+    },
+    "emily.larsen@ifit.com": {
+      "admin": false,
+      "tabs": {
+        "marketing": {
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true,
+          "insight": true
+        },
+        "media": {
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true,
+          "insight": true
+        }
+      },
+      "versions": "*"
     }
   },
   "_default_for_unlisted_users": {
