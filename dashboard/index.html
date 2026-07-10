@@ -1796,13 +1796,12 @@ function updateCoTriggerLabel(){
 }
 
 function rebuildChannelOptions(){
-  // Discover all channel values present in actuals_by_channel across accounts
-  const channels = new Set();
-  DATA.accounts.forEach(a => {
-    const cm = a.actuals_by_channel || {};
-    Object.values(cm).forEach(byCh => Object.keys(byCh).forEach(c => channels.add(c)));
-  });
-  const list = [...channels].sort();
+  // Discover all channel values present anywhere for this tab's accounts — must use the SAME
+  // source as mktgRawChannels() (actuals_by_channel_company + forecast_lines), not a narrower
+  // scan of actuals_by_channel alone. That mismatch used to leave one raw channel (a literal
+  // "0", which normalizes to Corp/Other) permanently out of the default selection, making the
+  // Corp/Other pill look "off" by default even though nothing had been deselected.
+  const list = [...mktgRawChannels()].sort();
   // Hide the channel filter unless this tab has multiple channels
   const fld = document.getElementById('channel-field');
   if (list.length < 2){ fld.style.display = 'none'; STATE.selectedChannels = null; return; }
