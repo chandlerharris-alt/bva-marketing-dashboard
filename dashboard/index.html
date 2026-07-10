@@ -623,6 +623,46 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
 .var-save-btn:hover{filter:brightness(1.15)}
 .var-save-btn:disabled{background:var(--gray-300);cursor:not-allowed}
 .var-save-status{font-size:13px;color:var(--gray);font-weight:500}
+
+/* ===== Mobile (<=768px) =====
+   The shell (.sidebar/.shell), filterbar, .bva tables, and .modal are shared across every
+   tab/view in the app (OPEX, Media, Overview, Forecast, Admin, Data Controls, Reclass
+   Suggestions, every drill panel), so fixing them here covers everything at once rather than
+   needing per-feature changes. Chart.js itself is already responsive:true/maintainAspectRatio:
+   false everywhere -- only the fixed-height wrapper below needs a breakpoint. */
+.sb-hamburger{display:none}
+.sidebar-backdrop{display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:99}
+.sidebar-backdrop.open{display:block}
+.filters-toggle{display:none}
+@media (max-width:768px){
+  /* Sidebar becomes an off-canvas drawer instead of permanently reserving 230px. */
+  .sidebar{transform:translateX(-100%); transition:transform .2s ease; z-index:300; box-shadow:2px 0 12px rgba(0,0,0,.25)}
+  .sidebar.open{transform:translateX(0)}
+  .shell{margin-left:0}
+  .sb-hamburger{display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border:1px solid rgba(255,255,255,.25); border-radius:8px; background:rgba(255,255,255,.08); color:#fff; font-size:16px; cursor:pointer; flex-shrink:0}
+
+  /* Filterbar is collapsed behind a toggle so the grid is visible without scrolling past a
+     wall of dropdowns first. */
+  .filters-toggle{display:flex; align-items:center; gap:6px; margin:10px 24px 0; padding:7px 14px; border:1px solid var(--border); border-radius:var(--ifit-radius-pill); background:#fff; font-size:12px; font-weight:600; color:var(--navy); cursor:pointer; width:fit-content}
+  .filterbar{display:none}
+  .filterbar.open{display:flex; margin-top:10px}
+  .field select, .field input, .multisel-trigger{min-width:130px}
+
+  /* Tables: keep the label column visible while scrolling horizontally through value columns,
+     and add a scroll cue so it's discoverable that the table scrolls. */
+  .bva-wrap{position:relative}
+  .bva-wrap::after{content:""; position:absolute; top:0; right:0; bottom:0; width:18px; background:linear-gradient(to right, rgba(255,255,255,0), rgba(0,0,0,.06)); pointer-events:none}
+  .bva th:first-child, .bva td:first-child{position:sticky; left:0; background:inherit; z-index:2; box-shadow:1px 0 0 var(--gray-100)}
+  .bva{font-size:11.5px}
+  .bva th, .bva td{padding:5px 7px}
+
+  /* Modals: the default 480px min-width overflows a phone screen. */
+  .modal{min-width:0 !important; width:calc(100vw - 32px); max-width:calc(100vw - 32px)}
+
+  /* Charts: fixed 340/400px heights make charts disproportionately tall on a narrow screen. */
+  .chart-canvas-wrap{height:240px}
+  .chart-canvas-wrap.tall{height:280px}
+}
 </style>
 </head>
 <body>
@@ -678,8 +718,10 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
   </div>
 </aside>
 
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebarDrawer(false)"></div>
 <div class="shell">
   <header class="topbar">
+    <button class="sb-hamburger" onclick="toggleSidebarDrawer()" title="Menu">&#9776;</button>
     <div>
       <h1 id="page-title">Loading…</h1>
       <div class="sub" id="dept-sub"></div>
@@ -698,7 +740,8 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
     </div>
   </header>
 
-  <div class="filterbar">
+  <button class="filters-toggle" id="filters-toggle-btn" onclick="toggleFilterbar()">&#9881; Filters <span id="filters-toggle-caret">&#9662;</span></button>
+  <div class="filterbar" id="filterbar">
     <div class="field"><label>View</label>
       <div class="pill-group" id="view-toggle">
         <button data-v="MONTH" class="active">Month</button>
@@ -1459,6 +1502,7 @@ function renderSidebar(){
 }
 
 function loadTab(slug){
+  closeSidebarDrawer();
   // Switch to BvA mode whenever a tab is clicked
   STATE.viewMode = 'bva';
   hideOverviewView();
@@ -6774,6 +6818,7 @@ function ovIsOpex(a){
 }
 
 function loadOverview(){
+  closeSidebarDrawer();
   STATE.viewMode = 'bva';
   STATE.subSection = null;
 
@@ -9193,6 +9238,7 @@ function hideDataControlsView(){
   if (dv) dv.style.display = 'none';
 }
 function loadReclassView(){
+  closeSidebarDrawer();
   STATE.viewMode = 'bva';
   STATE.subSection = null;
   // Not hideOverviewView() -- that function's job is to RESTORE the BvA grid/filterbar when
@@ -10626,6 +10672,27 @@ function computeTopVariances(data, fy, verKey, throughFm, ovView, limit){
 // =====================================================================
 // ADMIN PAGE — manage access.json
 // =====================================================================
+// ---- Mobile sidebar drawer + filterbar collapse ----
+// Only visually active under the @media(max-width:768px) breakpoint (the CSS classes these
+// toggle are no-ops above it), but safe to call unconditionally from every navigation entry
+// point below regardless of viewport width.
+function toggleSidebarDrawer(open){
+  const sb = document.querySelector('aside.sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const isOpen = sb && sb.classList.contains('open');
+  const next = (open !== undefined) ? open : !isOpen;
+  if (sb) sb.classList.toggle('open', next);
+  if (backdrop) backdrop.classList.toggle('open', next);
+}
+function closeSidebarDrawer(){ toggleSidebarDrawer(false); }
+function toggleFilterbar(open){
+  const fb = document.getElementById('filterbar');
+  const caret = document.getElementById('filters-toggle-caret');
+  const isOpen = fb && fb.classList.contains('open');
+  const next = (open !== undefined) ? open : !isOpen;
+  if (fb) fb.classList.toggle('open', next);
+  if (caret) caret.innerHTML = next ? '&#9652;' : '&#9662;';
+}
 function toggleAdminDropdown(open){
   const parentEl = document.querySelector('#sb-admin-toggle .sb-tab-parent');
   const childrenEl = document.getElementById('sb-admin-children');
@@ -10636,6 +10703,7 @@ function toggleAdminDropdown(open){
 }
 async function loadAdmin(){
   if (!authIsAdmin()){ alert('Admin role required.'); return; }
+  closeSidebarDrawer();
   STATE.viewMode = 'admin';
   ['bva-body','contacts-view','overview-view','calendar-view','reclass-view','data-controls-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   const filterbar = document.querySelector('.filterbar');
@@ -10717,6 +10785,7 @@ function renderAdmin(access){
 // ---- Data Controls (Admin) ----
 async function loadDataControlsView(){
   if (!authIsAdmin()){ alert('Admin role required.'); return; }
+  closeSidebarDrawer();
   STATE.viewMode = 'admin';
   const ovView = document.getElementById('overview-view');
   if (ovView) ovView.style.display = 'none';
