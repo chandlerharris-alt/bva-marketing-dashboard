@@ -1,6 +1,6 @@
 {
-  "_last_updated": "2026-07-10T17:56:38.273Z",
-  "_last_updated_by": "kirsten.spittel@ifit.com",
+  "_last_updated": "2026-07-15T16:12:43.713Z",
+  "_last_updated_by": "chandler.harris@ifit.com",
   "slug": "marketing",
   "categories": [
     {
@@ -176,7 +176,8 @@
       "customer data platform": "uc-1781098707653-986",
       "acquia (dam/athena)": "uc-1783705935692-437",
       "qualtrics": "uc-1783547305173-345",
-      "branch": "uc-1781098692041-252"
+      "branch": "uc-1781098692041-252",
+      "impact tech": "uc-1781098735166-532"
     },
     "8941000": {
       "skai (kenshoo)": "uc-1783705889389-855"
