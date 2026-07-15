@@ -1240,7 +1240,13 @@ const STATE = {
 };
 
 let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null };
-const FC_EXCLUDE_ACCTS = new Set(['6755000','5715000','5715200','5500056','5500057','7855000','7855000C','8925000C','9700000','5561000','5575000','5655000','5772000','6105000','8970000']);
+// This set was inherited from the Logistics/Warehousing dashboard this app was cloned from --
+// most of these codes (freight/returns-center/COGS accounts) are irrelevant here since this
+// deployment only ever renders the marketing/media manifest tabs, but 7855000/7855000C (Contract
+// Labor) is a real Marketing OPEX account and was wrongly hiding its actuals from the whole
+// Contract Labor category total on the OPEX grid -- removed. The Forecast tab's OWN separate,
+// deliberate /^78550/ regex filters (search FC_EXCLUDE_ACCTS usages below) are untouched.
+const FC_EXCLUDE_ACCTS = new Set(['6755000','5715000','5715200','5500056','5500057','8925000C','9700000','5561000','5575000','5655000','5772000','6105000','8970000']);
 let SAVE_STATE = { dirty:false, lastSavedAt:null };
 let ADMIN_STATE = { usersDirty:false, versionsDirty:false };
 function markAdminUsersDirty(){ ADMIN_STATE.usersDirty = true; updateAdminSaveButtons(); }
