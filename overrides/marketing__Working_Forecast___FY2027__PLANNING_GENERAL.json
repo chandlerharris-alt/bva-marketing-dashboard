@@ -1,6 +1,6 @@
 {
   "_saved_by": "chandler.harris@ifit.com",
-  "_saved_at": "2026-07-28T20:46:12.697Z",
+  "_saved_at": "2026-07-29T05:27:21.344Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -10,14 +10,20 @@
     "PLANNING_GENERAL|SKAI (Kenshoo)|Skai|8941000": {
       "spreads": [],
       "cellEdits": {
-        "1": 1200
+        "1": 6563
       }
     },
     "PLANNING_GENERAL|REHEARSALS||7865000": {
       "spreads": [],
       "cellEdits": {
         "3": 12500,
-        "4": 1000
+        "4": 12500
+      }
+    },
+    "PLANNING_GENERAL|Training course development||7858000": {
+      "spreads": [],
+      "cellEdits": {
+        "4": 1250
       }
     }
   }
