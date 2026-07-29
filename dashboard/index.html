@@ -1709,10 +1709,15 @@ function hideForecastPane(){
   if (bv) bv.style.display = '';
 }
 
-function applyPrepaidToForecasts(){
-  if (!DATA || !DATA.accounts || DATA._prepaidApplied) return;
-  DATA._prepaidApplied = true;
-  DATA.accounts.forEach(a => {
+function applyPrepaidToForecasts(dataset){
+  // Optional dataset param (defaults to the global DATA) so independently-fetched
+  // datasets — e.g. the Variance tab's VARIANCE_DATA, which deliberately isn't the
+  // shared global DATA — can get the same prepaid-amortization spreading applied,
+  // same reasoning as fxRate()'s srcData param for Overview's OV_COST_DATA.
+  const d = dataset || DATA;
+  if (!d || !d.accounts || d._prepaidApplied) return;
+  d._prepaidApplied = true;
+  d.accounts.forEach(a => {
     const prepaidByVer = {};
     (a.forecast_lines || []).forEach(l => {
       if ((l.expense_type||'').toLowerCase() !== 'prepaid') return;
@@ -7748,7 +7753,17 @@ const VAR_METRICS = [
 function varDefaultPlanVersion(fy){
   const avail = (VARIANCE_DATA?.meta?.available_versions || []).filter(v => v.endsWith('| FY'+fy));
   const names = [...new Set(avail.map(v => v.replace(/\s*\|\s*FY\d+$/, '')))];
-  return names.find(v => /AOP Final/i.test(v)) || names.find(v => /AOP/i.test(v)) || names[0] || 'Working Forecast';
+  // Same fix as setupComparisonPickers()'s AOP column: prefer the SELECTED FY's own AOP
+  // cut. A plain /AOP Final/i match picks whichever name sorts first alphabetically among
+  // ALL fiscal years' AOP Finals ("FY26: AOP Final" beats "FY27: AOP Final") — for FY2027
+  // that silently compares against FY26's stale budget, which has no real FY27 monthly
+  // data outside prepaid-amortization spillover, producing near-zero/garbage Plan figures.
+  const fyTag = 'FY' + (fy - 2000);
+  return names.find(v => v.startsWith(fyTag) && /AOP\s*Final/i.test(v))
+      || names.find(v => v.startsWith(fyTag) && /AOP/i.test(v))
+      || names.find(v => /AOP Final/i.test(v))
+      || names.find(v => /AOP/i.test(v))
+      || names[0] || 'Working Forecast';
 }
 
 // Company-scoped monthly $, always FX-converted to USD (a cross-region rollup shouldn't mix
@@ -7768,15 +7783,32 @@ function varActualsMonthly(rec, fy, effCo){
   return monthly;
 }
 function varForecastMonthly(rec, verKey, fy, effCo){
+  // No FX conversion here, unlike varActualsMonthly() — forecast/Plan $ are entered
+  // directly into Adaptive in USD regardless of source company (unlike actuals, which
+  // are raw GL bookings in local currency). getSeries() reflects this too: it reads
+  // rec.forecasts[key] straight through with no per-company FX step. Confirmed by
+  // comparing forecasts_by_company summed with vs. without FX against the real OPEX
+  // tab's total for the same version/month — only the unconverted sum matched.
   const byCo = (rec.forecasts_by_company || {})[verKey] || {};
   const monthly = new Array(12).fill(0);
-  Object.entries(byCo).forEach(([c, arr]) => {
-    if (!effCo.has(String(c))) return;
-    for (let i=0;i<12;i++){
-      const v = arr[i] || 0;
-      const r = fxRate(c, fy, i+1, VARIANCE_DATA);
-      monthly[i] += r ? v / r : v;
-    }
+  if (Object.keys(byCo).length){
+    Object.entries(byCo).forEach(([c, arr]) => {
+      if (!effCo.has(String(c))) return;
+      for (let i=0;i<12;i++) monthly[i] += (arr[i] || 0);
+    });
+    return monthly;
+  }
+  // Revenue's forecast comes from a separate pipeline (RPT_FORECAST_DETAIL) that never
+  // populates forecasts_by_company at all — it only tags company on the raw
+  // forecast_lines, and as source_company (not level_code, the field every other
+  // source uses). Without this fallback, revenue Plan is silently 0 for every region,
+  // which then nulls out every advertising rate-of-sales variance for that month too.
+  (rec.forecast_lines || []).forEach(l => {
+    if ((l.version + ' | FY' + l.fy) !== verKey) return;
+    const co = l.source_company != null ? String(l.source_company)
+             : (l.level_code ? String(parseInt(l.level_code,10)) : null);
+    if (!co || !effCo.has(co)) return;
+    if (l.fm >= 1 && l.fm <= 12) monthly[l.fm-1] += (l.amount || 0);
   });
   return monthly;
 }
@@ -7894,7 +7926,7 @@ function loadVarianceTabView(){
   if (VARIANCE_DATA){ ready(); return; }
   document.getElementById('variance-content').innerHTML = '<div class="spinner">Loading…</div>';
   fetch('../data/marketing.json', {cache:'no-store'}).then(r => r.json())
-    .then(d => { VARIANCE_DATA = d; ready(); })
+    .then(d => { VARIANCE_DATA = d; applyPrepaidToForecasts(VARIANCE_DATA); ready(); })
     .catch(err => { document.getElementById('variance-content').innerHTML = '<div class="spinner">Failed to load data: '+err+'</div>'; });
 }
 
