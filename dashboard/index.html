@@ -7783,26 +7783,35 @@ function varActualsMonthly(rec, fy, effCo){
   return monthly;
 }
 function varForecastMonthly(rec, verKey, fy, effCo){
-  // No FX conversion here, unlike varActualsMonthly() — forecast/Plan $ are entered
-  // directly into Adaptive in USD regardless of source company (unlike actuals, which
-  // are raw GL bookings in local currency). getSeries() reflects this too: it reads
-  // rec.forecasts[key] straight through with no per-company FX step. Confirmed by
-  // comparing forecasts_by_company summed with vs. without FX against the real OPEX
-  // tab's total for the same version/month — only the unconverted sum matched.
+  // PLANNING_GENERAL forecast $ ARE in each entity's local currency, same convention as
+  // actuals — confirmed against historical actuals run-rate (China: ~$16.5K/mo actual vs.
+  // ~$19.9K/mo FX-converted plan, both in the same ballpark; raw unconverted plan was
+  // $135K/mo, off by ~6.8x — exactly China's CNY/USD rate. UK showed the same pattern).
+  // getSeries()'s OWN company-filtered branch already divides by fxRate() for this exact
+  // reason; the bug this fixes is that effectiveSeries() never actually reaches that
+  // branch on OPEX (STATE.selectedChannels is always a truthy "all channels selected" Set
+  // even though the channel selector is UI-hidden there, routing every call through
+  // channelForecastMonthly() instead — which has no FX step at all). A prior version of
+  // this function skipped FX entirely because it happened to match the blended,
+  // all-regions OPEX total — that "match" was validating against the US company's rate of
+  // exactly 1.0 dominating the total, not against any single region's real number.
   const byCo = (rec.forecasts_by_company || {})[verKey] || {};
   const monthly = new Array(12).fill(0);
   if (Object.keys(byCo).length){
     Object.entries(byCo).forEach(([c, arr]) => {
       if (!effCo.has(String(c))) return;
-      for (let i=0;i<12;i++) monthly[i] += (arr[i] || 0);
+      for (let i=0;i<12;i++){
+        const v = arr[i] || 0;
+        const r = fxRate(c, fy, i+1, VARIANCE_DATA);
+        monthly[i] += r ? v / r : v;
+      }
     });
     return monthly;
   }
   // Revenue's forecast comes from a separate pipeline (RPT_FORECAST_DETAIL) that never
   // populates forecasts_by_company at all — it only tags company on the raw
-  // forecast_lines, and as source_company (not level_code, the field every other
-  // source uses). Without this fallback, revenue Plan is silently 0 for every region,
-  // which then nulls out every advertising rate-of-sales variance for that month too.
+  // forecast_lines, as source_company (not level_code). Unlike PLANNING_GENERAL, RPT
+  // rows are already USD (refresh_dept.py reads AMOUNT_USD specifically) — no FX here.
   (rec.forecast_lines || []).forEach(l => {
     if ((l.version + ' | FY' + l.fy) !== verKey) return;
     const co = l.source_company != null ? String(l.source_company)
