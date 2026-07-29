@@ -7746,7 +7746,7 @@ let VAR_STATE = { fy: null, planVersion: null, throughFm: null };
 
 const VAR_METRICS = [
   { key: 'fixed_opex',    label: 'Fixed OPEX (non-advertising)' },
-  { key: 'paid_media',    label: 'Paid Media (% of revenue)' },
+  { key: 'paid_media',    label: 'Paid Media (% of channel revenue)' },
   { key: 'nonpaid_media', label: 'Non-Paid Media (% of revenue)' },
 ];
 
@@ -7829,6 +7829,84 @@ function varSumAccountsMonthly(accts, effCo, fy, verKey, isForecast){
   });
   return monthly;
 }
+
+// ---- Channel-level slicing (Paid Media only — see computeVarianceRegionData) ----
+// Own raw-channel discovery against VARIANCE_DATA, mirroring mktgRawChannels()'s
+// approach for the global DATA — can't reuse that one directly since it caches
+// against a different dataset.
+let _varRawCh = null;
+function varRawChannels(){
+  if (_varRawCh) return _varRawCh;
+  const s = new Set();
+  (VARIANCE_DATA.accounts||[]).forEach(a => {
+    Object.values(a.actuals_by_channel_company||{}).forEach(byCh => Object.keys(byCh).forEach(c => s.add(c)));
+    (a.forecast_lines||[]).forEach(l => { if (l.channel != null) s.add(String(l.channel)); });
+  });
+  _varRawCh = [...s];
+  return _varRawCh;
+}
+// {displayChannel: [rawChannel, ...]} — groups every raw channel value found in the
+// data under its normalized display name (mktgNormChannel), same bucketing the Media
+// tab's own channel toggles use.
+let _varChGroups = null;
+function varChannelGroups(){
+  if (_varChGroups) return _varChGroups;
+  const groups = {};
+  varRawChannels().forEach(raw => {
+    const disp = mktgNormChannel(raw);
+    (groups[disp] = groups[disp] || []).push(raw);
+  });
+  _varChGroups = groups;
+  return groups;
+}
+function varActualsMonthlyChannel(rec, fy, effCo, rawChannels){
+  const cbc = (rec.actuals_by_channel_company || {})[fy] || {};
+  const monthly = new Array(12).fill(0);
+  rawChannels.forEach(ch => {
+    const byCo = cbc[ch] || {};
+    Object.entries(byCo).forEach(([c, arr]) => {
+      if (!effCo.has(String(c))) return;
+      for (let i=0;i<12;i++){
+        const v = arr[i] || 0;
+        const r = fxRate(c, fy, i+1, VARIANCE_DATA);
+        monthly[i] += r ? v / r : v;
+      }
+    });
+  });
+  return monthly;
+}
+// Channel-scoped forecast, summed directly from forecast_lines (forecasts_by_company
+// has no channel dimension at all) — mirrors channelForecastMonthly()'s line-scanning
+// approach, but keeps varForecastMonthly()'s per-source FX convention: PLANNING_GENERAL
+// lines are local-currency (need fxRate), RPT_FORECAST_DETAIL revenue lines are already
+// USD (tagged via l.source).
+function varForecastMonthlyChannel(rec, verKey, fy, effCo, rawChannels){
+  const chSet = new Set(rawChannels.map(String));
+  const monthly = new Array(12).fill(0);
+  (rec.forecast_lines || []).forEach(l => {
+    if ((l.version + ' | FY' + l.fy) !== verKey) return;
+    if (l.channel == null || !chSet.has(String(l.channel))) return;
+    const co = l.source_company != null ? String(l.source_company)
+             : (l.level_code ? String(parseInt(l.level_code,10)) : null);
+    if (!co || !effCo.has(co)) return;
+    if (l.fm < 1 || l.fm > 12) return;
+    let amt = l.amount || 0;
+    if (l.source !== 'RPT_FORECAST_DETAIL'){
+      const r = fxRate(co, fy, l.fm, VARIANCE_DATA);
+      amt = r ? amt / r : amt;
+    }
+    monthly[l.fm - 1] += amt;
+  });
+  return monthly;
+}
+function varSumAccountsMonthlyChannel(accts, effCo, fy, verKey, isForecast, rawChannels){
+  const monthly = new Array(12).fill(0);
+  accts.forEach(a => {
+    const arr = isForecast ? varForecastMonthlyChannel(a, verKey, fy, effCo, rawChannels) : varActualsMonthlyChannel(a, fy, effCo, rawChannels);
+    for (let i=0;i<12;i++) monthly[i] += arr[i];
+  });
+  return monthly;
+}
 // Advertising's "rate of sales" variance, dollarized: at the planned ad-spend-as-%-of-revenue
 // rate, actual revenue would have supported (planPct * actualRevenue) of spend; the gap
 // between that and what was actually spent is the $ over/underspend on a sales-rate basis
@@ -7848,30 +7926,53 @@ function varRateVariance(planSpend, actualSpend, planRev, actualRev){
 }
 
 // Full region x metric rollup for one fiscal year, vs one Plan version. Fixed OPEX uses a
-// plain $ plan-minus-actual (Chandler's "no fancy math"); advertising uses the rate-of-sales
-// dollarization above, split paid vs non-paid.
+// plain $ plan-minus-actual (Chandler's "no fancy math"). Non-Paid Media uses the
+// rate-of-sales dollarization against the WHOLE region's revenue (it isn't targeted at
+// any one channel's sales the way paid digital spend is). Paid Media is computed PER
+// CHANNEL against that channel's own revenue — e.g. DTC-US ad spend is rated against
+// DTC-US revenue, not blended against Wholesale/Freemotion revenue in the same region —
+// then summed to the region level, per Chandler's explicit ask.
 function computeVarianceRegionData(fy, planVerKey){
   const accts = (VARIANCE_DATA && VARIANCE_DATA.accounts) || [];
   const fixedAccts = accts.filter(a => !MKTG_AD_ACCTS.has(a.reporting_account) && a.category !== 'Revenue');
   const paidAccts = accts.filter(a => MEDIA_PAID_ACCTS.includes(a.reporting_account));
   const nonpaidAccts = accts.filter(a => MKTG_AD_ACCTS.has(a.reporting_account) && !MEDIA_PAID_ACCTS.includes(a.reporting_account));
   const revAccts = accts.filter(a => isRevenueAccount(a.reporting_account));
+  const chGroups = varChannelGroups();
+  const dispChannels = Object.keys(chGroups);
 
   const out = {};
   MEDIA_REGION_ORDER.forEach(region => {
     const effCo = new Set((MEDIA_REGION_COMPANIES[region]||[]).map(String));
     const fixedActual = varSumAccountsMonthly(fixedAccts, effCo, fy, null, false);
     const fixedPlan   = varSumAccountsMonthly(fixedAccts, effCo, fy, planVerKey, true);
-    const paidActual = varSumAccountsMonthly(paidAccts, effCo, fy, null, false);
-    const paidPlan   = varSumAccountsMonthly(paidAccts, effCo, fy, planVerKey, true);
     const nonpaidActual = varSumAccountsMonthly(nonpaidAccts, effCo, fy, null, false);
     const nonpaidPlan   = varSumAccountsMonthly(nonpaidAccts, effCo, fy, planVerKey, true);
     const revActual = varSumAccountsMonthly(revAccts, effCo, fy, null, false);
     const revPlan   = varSumAccountsMonthly(revAccts, effCo, fy, planVerKey, true);
 
+    const paidActual = new Array(12).fill(0);
+    const paidPlan = new Array(12).fill(0);
+    const paidVariance = new Array(12).fill(0);
+    const paidByChannel = {};
+    dispChannels.forEach(ch => {
+      const raws = chGroups[ch];
+      const chPaidActual = varSumAccountsMonthlyChannel(paidAccts, effCo, fy, null, false, raws);
+      const chPaidPlan   = varSumAccountsMonthlyChannel(paidAccts, effCo, fy, planVerKey, true, raws);
+      const chRevActual  = varSumAccountsMonthlyChannel(revAccts, effCo, fy, null, false, raws);
+      const chRevPlan    = varSumAccountsMonthlyChannel(revAccts, effCo, fy, planVerKey, true, raws);
+      const rv = varRateVariance(chPaidPlan, chPaidActual, chRevPlan, chRevActual);
+      for (let i=0;i<12;i++){
+        paidActual[i] += chPaidActual[i];
+        paidPlan[i] += chPaidPlan[i];
+        paidVariance[i] += rv.variance[i];
+      }
+      paidByChannel[ch] = { plan: chPaidPlan, actual: chPaidActual, variance: rv.variance, bps: rv.bps };
+    });
+
     out[region] = {
       fixed_opex: { plan: fixedPlan, actual: fixedActual, variance: fixedPlan.map((v,i) => v - fixedActual[i]) },
-      paid_media: varRateVariance(paidPlan, paidActual, revPlan, revActual),
+      paid_media: { plan: paidPlan, actual: paidActual, variance: paidVariance, byChannel: paidByChannel },
       nonpaid_media: varRateVariance(nonpaidPlan, nonpaidActual, revPlan, revActual),
     };
   });
@@ -7984,7 +8085,6 @@ function renderVarianceTabView(){
       const running = varRunningTotal(regionData, region, key, fy, throughFm);
       grandRunning[key] += running;
       const cls = running > 0.5 ? 'fav' : running < -0.5 ? 'unfav' : 'muted';
-      const metricNote = key === 'fixed_opex' ? '' : ` (${varFmtBps(sum(rd[key].bps.slice(0,throughFm).filter(b=>b!=null))/Math.max(1,rd[key].bps.slice(0,throughFm).filter(b=>b!=null).length) || 0)} avg)`;
       return `<td class="num" style="min-width:130px">
         <div class="${cls}" style="font-weight:600">${fmtUSD(running)}</div>
         <button class="btn-sm" style="margin-top:4px;padding:2px 8px;font-size:10px" onclick="openVarAllocModal('${region}','${key}')" ${canEdit?'':'disabled'}>Allocate</button>
@@ -8039,7 +8139,7 @@ function renderVarianceTabView(){
     </div>`;
 
   content.innerHTML = `${controls}
-    <div class="card"><div class="card-h">Variance to Plan — running total by region<span class="meta">Fixed OPEX = flat $ to plan. Advertising = rate-of-sales dollarized variance, paid/non-paid split.</span></div>
+    <div class="card"><div class="card-h">Variance to Plan — running total by region<span class="meta">Fixed OPEX = flat $ to plan. Paid Media = rate-of-sales variance computed per channel (e.g. DTC-US vs. DTC revenue) then summed. Non-Paid Media = rate-of-sales variance vs. whole-region revenue.</span></div>
       <div class="bva-wrap">${table}</div>
     </div>
     ${allocTable}`;
