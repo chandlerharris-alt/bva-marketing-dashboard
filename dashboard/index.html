@@ -355,6 +355,16 @@ tr:hover .fc-del-icon{opacity:1}
 .bva td.fc-cmp.fav{color:var(--green)}
 .bva td.fc-cmp.unfav{color:var(--red)}
 .bva td.fc-cmp.muted{color:var(--gray)}
+.bva th.fc-var{background:#fdf5f0; color:var(--navy)}
+.bva td.fc-var{background:#fffaf6; border-left:1px solid var(--gray-100)}
+.bva td.fc-var.fav{color:var(--green)}
+.bva td.fc-var.unfav{color:var(--red)}
+.bva td.fc-var.muted{color:var(--gray)}
+.fc-cmp-mode-toggle{display:inline-flex; border:1px solid var(--border); border-radius:5px; overflow:hidden}
+.fc-cmp-mode-toggle button{border:none; background:#fff; color:var(--navy); font-size:12px; font-weight:600; padding:5px 12px; cursor:pointer; border-right:1px solid var(--border)}
+.fc-cmp-mode-toggle button:last-child{border-right:none}
+.fc-cmp-mode-toggle button.active{background:var(--navy); color:#fff}
+.fc-cmp-mode-toggle button:disabled{color:var(--gray-300); cursor:not-allowed}
 .fc-bva-acct{cursor:pointer}
 .fc-bva-acct.open td:first-child span:first-child{transform:rotate(90deg); display:inline-block}
 
@@ -448,7 +458,7 @@ tr:hover .fc-del-icon{opacity:1}
 
 /* ===== Prepaid / Spread system ===== */
 .fc-cell-spread{background:#f3f4f6 !important}
-.fc-cell-overridden{background:#fffbeb !important}
+.fc-cell-overridden{background:#eff6ff !important; color:#1d4ed8 !important; font-weight:600; box-shadow:inset 0 0 0 1px #93c5fd}
 .fc-spread-chips{display:flex; flex-wrap:wrap; gap:3px; margin-top:3px}
 .fc-spread-chip{display:inline-flex; align-items:center; gap:3px; background:#e0f2fe; border:1px solid #7dd3fc; border-radius:10px; padding:1px 7px 1px 8px; font-size:10px; color:#0369a1; white-space:nowrap}
 .fc-spread-chip-x{cursor:pointer; color:#0369a1; font-size:11px; line-height:1; margin-left:2px}
@@ -1239,7 +1249,7 @@ const STATE = {
   reclassMode:'before',     // 'before' | 'after' — restate financials with suggested reclasses applied
 };
 
-let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null };
+let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary' };
 // This set was inherited from the Logistics/Warehousing dashboard this app was cloned from --
 // most of these codes (freight/returns-center/COGS accounts) are irrelevant here since this
 // deployment only ever renders the marketing/media manifest tabs, but 7855000/7855000C (Contract
@@ -4741,14 +4751,31 @@ function applyOverrides(lines, slug, versionKey, source){
   const ov = getOverrideSection(slug, versionKey, source);
   const removed = new Set(ov.removed||[]);
   const edited = ov.edited||{};
+  const added = ov.added||[];
+
+  // A cellEdits map stores {fmIdx(0-based): amount}, keyed per-mk-group — apply
+  // the one matching this row's own fiscal month onto l.amount (not just spread
+  // the map object onto the row, which is all the old code did).
+  function withCellEdit(l, cellEdits){
+    if (!cellEdits) return l;
+    const fmKey = String((l.fm||1) - 1);
+    if (!Object.prototype.hasOwnProperty.call(cellEdits, fmKey)) return l;
+    return Object.assign({}, l, { amount: cellEdits[fmKey], _overridden: true });
+  }
+
   const result = lines.filter(l => !removed.has(matchKey(l))).map(l => {
     const mk = matchKey(l);
-    if (edited[mk]){
-      return Object.assign({}, l, edited[mk]);
-    }
-    return l;
+    let out = l;
+    if (edited[mk]) out = Object.assign({}, out, edited[mk]);
+    out = withCellEdit(out, edited[mk] && edited[mk].cellEdits);
+    return out;
   });
-  (ov.added||[]).forEach(a => result.push(Object.assign({ source }, a)));
+  added.forEach(a => {
+    const row = Object.assign({ source }, a);
+    const mk = matchKey(row);
+    const rec = added.find(x => matchKey(Object.assign({source}, x)) === mk);
+    result.push(withCellEdit(row, rec && rec.cellEdits));
+  });
   return result;
 }
 
@@ -5188,11 +5215,13 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
     const acctDisplay = `${line.acct.replace(/C$/,'')}${acctName? ' · '+acctName : ''}`;
 
     let spreads = [];
+    let cellEdits = {};
     let chipsBlock = '', prepaidBtn = '';
     if (fys.length === 1){
       const editRec = edited[mk] || null;
       const addedRec = added.find(a => matchKey(Object.assign({source: primarySrc}, a)) === mk) || null;
       spreads = (editRec ? editRec.spreads : (addedRec ? addedRec.spreads : null)) || [];
+      cellEdits = (editRec ? editRec.cellEdits : (addedRec ? addedRec.cellEdits : null)) || {};
       const chips = spreads.map(sp => {
         const mo = FM_LABELS[(sp.startFm-1)%12];
         const amt = sp.amount >= 1000 ? `$${Math.round(sp.amount/1000)}K` : `$${Math.round(sp.amount)}`;
@@ -5219,7 +5248,8 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       mo.forEach((v,i) => { grandPerFy[fy][i] += v; });
       const verKey = versionName + ' | FY' + fy;
       cellsHtml += mo.map((v, i) => {
-        const cls = canEdit ? 'num fc-cell-display' : 'num fc-cell-readonly';
+        const overridden = String(i) in cellEdits;
+        const cls = (canEdit ? 'num fc-cell-display' : 'num fc-cell-readonly') + (overridden ? ' fc-cell-overridden' : '');
         const click = canEdit ? `onclick="fcCellEdit(this)"` : '';
         return `<td class="${cls}" data-fm="${i}" data-mk="${mk.replace(/"/g,'&quot;')}"
                 data-source="${primarySrc}" data-verkey="${verKey.replace(/"/g,'&quot;')}"
@@ -5264,134 +5294,6 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   html.push(`<tr class="subtotal"><td colspan="6">Total · ${lines.length} lines</td>${gCells}${gFy}${gGrand}<td></td></tr>`);
   html.push(`</tbody></table>`);
   return html.join('');
-}
-
-// Render the BvA-style forecast category grid for a given source
-function buildFcBvaGrid(lines, slug, versionKey, source, editable){
-  const stdOrder = getStandardCategoryOrder();
-  const byCat = groupLinesByCatAcct(lines);
-  const html = [];
-
-  const ov = editable ? getOverrideSection(slug, versionKey, source) : null;
-  const edited = ov ? (ov.edited||{}) : {};
-  const addedOverrides = ov ? (ov.added||[]) : [];
-
-  html.push(`<table class="bva"><thead>`);
-  html.push(`<tr class="group-row"><th></th>${FM_LABELS.map(m=>`<th class="section-val">${m}</th>`).join('')}<th class="section-val">FY Total</th></tr>`);
-  html.push(`</thead><tbody>`);
-
-  const grandMonthly = new Array(12).fill(0);
-  stdOrder.forEach(cat => {
-    const accts = byCat[cat];
-    if (!accts || !Object.keys(accts).length) return;
-    const catMonthly = new Array(12).fill(0);
-    Object.values(accts).forEach(d => d.monthly.forEach((v,i) => catMonthly[i]+=v));
-    catMonthly.forEach((v,i)=>grandMonthly[i]+=v);
-    if (catMonthly.every(v=>Math.abs(v)<0.5)) return;
-    const catTot = catMonthly.reduce((s,v)=>s+v,0);
-    html.push(`<tr class="fc-bva-cat bva" data-fc-cat="${cat}">
-      <td>${cat}</td>
-      ${catMonthly.map(v=>`<td class="num section-val">${fmtUSD(v)}</td>`).join('')}
-      <td class="num section-val"><strong>${fmtUSD(catTot)}</strong></td>
-    </tr>`);
-
-    Object.entries(accts).forEach(([acct, data]) => {
-      const acctTot = data.monthly.reduce((s,v)=>s+v,0);
-      if (Math.abs(acctTot)<0.5) return;
-      html.push(`<tr class="fc-bva-line bva acct-row" data-fc-parent="${cat}" data-fc-acct="${acct}">
-        <td style="padding-left:24px">${acct}${data.description&&data.description!==acct?' — '+data.description:''}</td>
-        ${data.monthly.map(v=>`<td class="num section-val">${fmtUSD(v)}</td>`).join('')}
-        <td class="num section-val">${fmtUSD(acctTot)}</td>
-      </tr>`);
-
-      const lineGroups = {};
-      data.lines.forEach(l => {
-        const key = (l.description||'')+'|'+(l.vendor||'');
-        if (!lineGroups[key]){
-          lineGroups[key] = { desc:l.description||'', vendor:l.vendor||'',
-            monthly:new Array(12).fill(0), mk:matchKey(l),
-            isPrepaid:false, amortMonths:null, source: l.source||source };
-        }
-        if ((l.expense_type||'').toLowerCase()==='prepaid') lineGroups[key].isPrepaid=true;
-        if (l._amortized) lineGroups[key].amortMonths=l._amortized_total_months||12;
-        if(l.fm>=1&&l.fm<=12) lineGroups[key].monthly[l.fm-1]+=(l.amount||0);
-      });
-
-      Object.values(lineGroups).forEach(lg => {
-        const lgTot = lg.monthly.reduce((s,v)=>s+v,0);
-        if (Math.abs(lgTot)<0.5 && !editable) return;
-
-        if (!editable){
-          // Read-only row with type badge
-          const typeBadge = lg.isPrepaid
-            ? `<span class="fc-type-badge prepaid">Prepaid${lg.amortMonths?' · '+lg.amortMonths+'mo':''}</span>`
-            : '';
-          html.push(`<tr class="fc-bva-line bva other-row" data-fc-parent="${cat}" data-fc-acct="${acct}">
-            <td style="padding-left:42px;color:var(--gray)">${lg.desc||'—'}${lg.vendor?' / '+lg.vendor:''}${typeBadge}${ucChipHtml(ACTIVE_SLUG, lg.desc, acct)}</td>
-            ${lg.monthly.map(v=>`<td class="num">${fmtUSD(v)}</td>`).join('')}
-            <td class="num">${fmtUSD(lgTot)}</td>
-          </tr>`);
-          return;
-        }
-
-        // Editable row with prepaid button + spread chips
-        const mk = lg.mk;
-        const mkEsc = mk.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const editRec = edited[mk] || null;
-        const addedRec = addedOverrides.find(a =>
-          matchKey(Object.assign({source}, a)) === mk ||
-          (a.description===lg.desc && a.vendor===lg.vendor && a.account===acct)
-        ) || null;
-        const spreads = (editRec ? editRec.spreads : (addedRec ? addedRec.spreads : null)) || [];
-        const cellEdits = (editRec ? editRec.cellEdits : (addedRec ? addedRec.cellEdits : null)) || {};
-        const spreadMonthly = computeSpreadMonthly(spreads);
-
-        let type = lg.isPrepaid ? 'Prepaid' : 'Expense';
-        if (spreads.length) type = 'Prepaid';
-        const typeBadge = type === 'Prepaid'
-          ? `<span class="fc-type-badge prepaid">Prepaid${lg.amortMonths?' · '+lg.amortMonths+'mo':''}</span>`
-          : '<span class="fc-type-badge expense">Expense</span>';
-        const prepaidBtn = `<button class="fc-prepaid-btn" onclick="openSpreadPopover(event,'${mkEsc}','${source}')">+ Prepaid</button>`;
-        const delBtn = `<span class="fc-del-icon" title="Remove" onclick="deleteFcLine(event,'${mkEsc}','${source}')">&#10005;</span>`;
-
-        const chipsHtml = spreads.map(sp => {
-          const mo = FM_LABELS[(sp.startFm-1)%12];
-          const amt = sp.amount >= 1000 ? `$${Math.round(sp.amount/1000)}K` : `$${Math.round(sp.amount)}`;
-          const spId = sp.id.replace(/'/g,"\\'");
-          return `<span class="fc-spread-chip">${amt}&nbsp;&middot;&nbsp;${sp.nMonths}mo from ${mo}<span class="fc-spread-chip-x" onclick="removeSpread(event,'${mkEsc}','${spId}','${source}')">&#10005;</span></span>`;
-        }).join('');
-        const chipsBlock = spreads.length ? `<div class="fc-spread-chips">${chipsHtml}</div>` : '';
-
-        const cellsHtml = lg.monthly.map((v, i) => {
-          const hasSpread = Math.abs(spreadMonthly[i]) > 0.001;
-          const hasCellEdit = String(i) in cellEdits;
-          const cls = ['num',
-            hasSpread ? 'fc-cell-spread' : '',
-            hasCellEdit ? 'fc-cell-overridden' : ''
-          ].filter(Boolean).join(' ');
-          return `<td class="${cls}">${fmtUSD(v)}</td>`;
-        }).join('');
-
-        html.push(`<tr class="fc-bva-line bva other-row" data-fc-parent="${cat}" data-fc-acct="${acct}" data-mk="${mk.replace(/"/g,'&quot;')}">
-          <td style="padding-left:42px;color:var(--gray)">
-            ${lg.desc||'—'}${lg.vendor?' / '+lg.vendor:''}${typeBadge}${ucChipHtml(ACTIVE_SLUG, lg.desc, acct)}${prepaidBtn}${delBtn}
-            ${chipsBlock}
-          </td>
-          ${cellsHtml}
-          <td class="num">${fmtUSD(lgTot)}</td>
-        </tr>`);
-      });
-    });
-  });
-
-  const grandTot = grandMonthly.reduce((s,v)=>s+v,0);
-  html.push(`<tr class="subtotal">
-    <td>Total</td>
-    ${grandMonthly.map(v=>`<td class="num section-val">${fmtUSD(v)}</td>`).join('')}
-    <td class="num section-val"><strong>${fmtUSD(grandTot)}</strong></td>
-  </tr>`);
-  html.push(`</tbody></table>`);
-  return { html:html.join(''), grandTot, grandMonthly };
 }
 
 function renderForecastPane(){
@@ -5525,13 +5427,20 @@ function renderForecastPane(){
     const cmpOptions = compareCandidates.map(v =>
       `<option value="${v.replace(/"/g,'&quot;')}"${v===compareVer?' selected':''}>${v}</option>`
     ).join('');
+    const cmpMode = compareVer ? (FORECAST_STATE.cmpViewMode || 'primary') : 'primary';
+    const modeBtn = (val, label) => `<button data-cmp-mode="${val}" class="${cmpMode===val?'active':''}" ${compareVer?'':'disabled'}>${label}</button>`;
     const cmpBar = `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 14px;background:#fafcff;border:1px solid var(--border);border-radius:6px;flex-wrap:wrap">
         <label class="fc-fb-label" style="margin:0">Compare To</label>
         <select id="fc-summary-cmp" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px;color:var(--navy);background:#fff;cursor:pointer">
           <option value="">(none — primary only)</option>${cmpOptions}
         </select>
-        ${compareVer ? `<span style="font-size:11px;color:var(--gray)">Showing $ &amp; % variance vs <strong>${compareVer}</strong></span>` : ''}
+        <div class="fc-cmp-mode-toggle" id="fc-cmp-mode-toggle">
+          ${modeBtn('primary', versionName)}
+          ${modeBtn('compare', 'Compare')}
+          ${modeBtn('both', 'Both + Variance')}
+        </div>
+        ${compareVer ? `<span style="font-size:11px;color:var(--gray)">vs <strong>${compareVer}</strong></span>` : ''}
       </div>
     `;
 
@@ -5545,6 +5454,12 @@ function renderForecastPane(){
       </div>`;
     wireFcFilterBar();
     wireSummaryExpand(content);
+    document.querySelectorAll('#fc-cmp-mode-toggle button').forEach(btn => {
+      btn.onclick = () => {
+        FORECAST_STATE.cmpViewMode = btn.dataset.cmpMode;
+        renderForecastPane();
+      };
+    });
     const cmpSel = document.getElementById('fc-summary-cmp');
     if (cmpSel){
       cmpSel.onchange = () => {
@@ -5884,31 +5799,7 @@ function saveTripModal(){
   renderForecastPane();
 }
 
-// ---- Editable OPEX: edit/delete line ----
-let _editFcLineData = null;
-function editFcLine(e, acct, mk){
-  e.stopPropagation();
-  const verKey = STATE.fcVersion;
-  const src = STATE.fcSubTab === 'cl' ? 'CONTRACT_LABOR' : 'PLANNING_GENERAL';
-  const o = loadOverrides();
-  const k = overrideKey(ACTIVE_SLUG, verKey, src);
-  if (!o[k]) o[k]={added:[],removed:[],edited:{}};
-  // Find current monthly values
-  const _vkm = verKey.match(/^(.*) \| FY(\d+)$/);
-  const rawLines = collectFcLines(src, _vkm?.[1]||'', +(_vkm?.[2]||STATE.fy));
-  const existing = o[k].edited[mk];
-  const current = existing ? existing.monthly : linesToMonthly(rawLines.filter(l => matchKey(l)===mk));
-  const newMonthly = current.map((v,i) => {
-    const n = prompt(`${FM_LABELS[i]} amount (current: ${fmtUSD(v)}):`, String(v));
-    if (n===null) return v;
-    return isNaN(+n)?v:+n;
-  });
-  if (!o[k].edited[mk]) o[k].edited[mk]={};
-  o[k].edited[mk].monthly = newMonthly;
-  saveOverrides(o);
-  renderForecastPane();
-}
-
+// ---- Editable OPEX: delete line ----
 function deleteFcLine(e, mk, source){
   e.stopPropagation();
   if (!confirm('Remove this line from the forecast?')) return;
@@ -5955,14 +5846,29 @@ function saveFcRowModal(){
   const acct = document.getElementById('fr-account').value;
   const vendor = document.getElementById('fr-vendor').value.trim();
   const notes = document.getElementById('fr-notes').value.trim();
-  const monthly = FM_LABELS.map((_,i)=>+(document.getElementById('fr-m'+i)?.value||0));
-  const id = 'added-'+Date.now();
   const verKey = _fcRowVerKey || STATE.fcVersion;
   const src = _fcRowSrc || 'PLANNING_GENERAL';
+  const vkm = verKey.match(/^(.*) \| FY(\d+)$/);
+  const fy = +(vkm?.[2] || STATE.fy);
+  // One {fm, amount} row per nonzero month — matches the shape every reader
+  // (buildFcLineItemEditor, groupLinesByCatAcct) expects from a forecast line.
+  const monthAmounts = FM_LABELS.map((_,i) => +(document.getElementById('fr-m'+i)?.value || 0));
+  if (!monthAmounts.some(v => v)){
+    alert('Enter at least one month\'s amount before saving.');
+    return;
+  }
+  const id = 'added-'+Date.now();
+  const verKeySafe = verKey;
   const o = loadOverrides();
-  const k = overrideKey(ACTIVE_SLUG, verKey, src);
+  const k = overrideKey(ACTIVE_SLUG, verKeySafe, src);
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
-  o[k].added.push({ id, description:desc, account:acct, vendor, monthly, notes, source:src });
+  monthAmounts.forEach((amount, i) => {
+    if (!amount) return;
+    o[k].added.push({
+      id: id + '-' + i, description: desc, account: acct, vendor, notes,
+      fy, fm: i + 1, amount, expense_type: 'Expense', source: src,
+    });
+  });
   saveOverrides(o);
   closeFcRowModal();
   renderForecastPane();
@@ -6110,6 +6016,12 @@ function exportPlanningGeneralCsv(){
 // ---- Forecast Summary Card with comparison (Logistics-style) ----
 function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compareVer){
   const showCmp = !!(perFyLinesCmp && compareVer);
+  // Primary = current working version's own months. Compare = the compare-to version's
+  // own months in the same columns. Both = all three side by side (primary, compare,
+  // and a per-month variance) — what Chandler asked for: "see every individual forecast
+  // line item by month in the current working forecast, the forecast I am wanting to
+  // compare to, and then a variance."
+  const cmpMode = showCmp ? (FORECAST_STATE.cmpViewMode || 'primary') : 'primary';
   const stdOrder = getStandardCategoryOrder();
   const stdSet = new Set(stdOrder);
   const acctCatMap = {}, acctNameMap = {};
@@ -6158,30 +6070,49 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
     }
   });
 
+  function sumPerFy(perFyMonthly){
+    return Object.values(perFyMonthly||{}).reduce((s, arr) => s + (arr||[]).reduce((a,b)=>a+b,0), 0);
+  }
   function rowCellsHtml(perFyMonthly, opts){
     opts = opts || {};
     const cls = opts.boldTotals ? 'strong' : '';
+    const tdCls = opts.tdClass ? ' '+opts.tdClass : '';
     let cells = '';
     let fyTotals = [];
     let grand = 0;
     fys.forEach(fy => {
       const mo = perFyMonthly[fy] || new Array(12).fill(0);
-      cells += mo.map(v => `<td class="num section-val">${fmtUSD(v)}</td>`).join('');
+      cells += mo.map(v => `<td class="num section-val${tdCls}">${fmtUSD(v)}</td>`).join('');
       const ft = mo.reduce((s,v)=>s+v,0);
       fyTotals.push(ft);
       grand += ft;
     });
-    const fyCells = fyTotals.map(t => `<td class="num section-val">${cls?'<strong>':''}${fmtUSD(t)}${cls?'</strong>':''}</td>`).join('');
-    const grandCell = fys.length > 1
-      ? `<td class="num section-val">${cls?'<strong>':''}${fmtUSD(grand)}${cls?'</strong>':''}</td>` : '';
+    const fyCells = fyTotals.map(t => `<td class="num section-val${tdCls}">${cls?'<strong>':''}${fmtUSD(t)}${cls?'</strong>':''}</td>`).join('');
+    const grandCell = (fys.length > 1 && opts.showGrand)
+      ? `<td class="num section-val${tdCls}">${cls?'<strong>':''}${fmtUSD(grand)}${cls?'</strong>':''}</td>` : '';
     return cells + fyCells + grandCell;
   }
-
-  function cmpTotal(perFyMonthly){
-    if (!perFyMonthly) return 0;
-    let t = 0;
-    fys.forEach(fy => (perFyMonthly[fy]||[]).forEach(v => t += v));
-    return t;
+  // Per-month (primary − compare) variance block, same column shape as rowCellsHtml.
+  function varianceCellsHtml(perFyPrimary, perFyCmp, opts){
+    opts = opts || {};
+    const cls = opts.boldTotals ? 'strong' : '';
+    let cells = '';
+    let fyTotals = [];
+    fys.forEach(fy => {
+      const p = perFyPrimary[fy] || new Array(12).fill(0);
+      const c = perFyCmp[fy] || new Array(12).fill(0);
+      const diffs = p.map((v,i) => v - (c[i]||0));
+      cells += diffs.map(v => {
+        const favCls = Math.abs(v) < 0.5 ? 'muted' : v > 0 ? 'unfav' : 'fav';
+        return `<td class="num section-val fc-var ${favCls}">${fmtUSD(v)}</td>`;
+      }).join('');
+      fyTotals.push(diffs.reduce((s,v)=>s+v,0));
+    });
+    cells += fyTotals.map(t => {
+      const favCls = Math.abs(t) < 0.5 ? 'muted' : t > 0 ? 'unfav' : 'fav';
+      return `<td class="num section-val fc-var ${favCls}">${cls?'<strong>':''}${fmtUSD(t)}${cls?'</strong>':''}</td>`;
+    }).join('');
+    return cells;
   }
   function cmpCells(primaryTotal, cmpVal){
     const diff = primaryTotal - cmpVal;
@@ -6191,22 +6122,52 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
             <td class="num fc-cmp ${cls}">${fmtUSD(diff)}</td>
             <td class="num fc-cmp ${cls}">${pct==null?'—':fmtPct(pct, cls)}</td>`;
   }
+  // Renders the full column set for one row (cat/acct/line), branching on cmpMode.
+  // 'primary' (default): unchanged existing behavior — primary months + trailing
+  // Compare Total/Δ$/Δ% summary. 'compare': swap the main months for the compare
+  // version's own months. 'both': primary months, then compare months, then a
+  // per-month variance block, all side by side.
+  function rowHtmlForMode(perFyPrimary, perFyCmp, opts){
+    opts = opts || {};
+    if (cmpMode === 'compare'){
+      return rowCellsHtml(perFyCmp, opts);
+    }
+    if (cmpMode === 'both'){
+      return rowCellsHtml(perFyPrimary, opts)
+           + rowCellsHtml(perFyCmp, Object.assign({}, opts, { tdClass: 'fc-cmp' }))
+           + varianceCellsHtml(perFyPrimary, perFyCmp, opts);
+    }
+    const cells = rowCellsHtml(perFyPrimary, Object.assign({}, opts, { showGrand: true }));
+    if (!showCmp) return cells;
+    return cells + cmpCells(sumPerFy(perFyPrimary), sumPerFy(perFyCmp));
+  }
 
-  const monthCols = fys.flatMap(fy => FM_LABELS.map(m => `${m}<span class="fc-fy-suffix"> ${fy-2000}</span>`));
-  const fyTotalHdrs = fys.map(fy => `FY${fy-2000} Total`);
-  const grandTotalHdr = fys.length > 1 ? `<th class="section-val">Grand Total</th>` : '';
-  const cmpHdrs = showCmp
-    ? `<th class="section-val fc-cmp">${compareVer}</th><th class="section-val fc-cmp">&Delta; $</th><th class="section-val fc-cmp">&Delta; %</th>` : '';
-  const headerCols = monthCols.map(h => `<th class="section-val">${h}</th>`).join('')
-                   + fyTotalHdrs.map(h => `<th class="section-val">${h}</th>`).join('');
+  const monthColsBlock = (tag) => fys.flatMap(fy => FM_LABELS.map(m =>
+    `<th class="section-val${tag?' '+tag:''}">${m}<span class="fc-fy-suffix"> ${fy-2000}</span></th>`)).join('');
+  const fyTotalHdrsBlock = (label, tag) => fys.map(fy =>
+    `<th class="section-val${tag?' '+tag:''}">${label?label+' ':''}FY${fy-2000} Total</th>`).join('');
+
+  let headerCols;
+  if (cmpMode === 'compare'){
+    headerCols = monthColsBlock() + fyTotalHdrsBlock();
+  } else if (cmpMode === 'both'){
+    headerCols = monthColsBlock() + fyTotalHdrsBlock()
+      + monthColsBlock('fc-cmp') + fyTotalHdrsBlock('Cmp', 'fc-cmp')
+      + monthColsBlock('fc-var') + fyTotalHdrsBlock('Var', 'fc-var');
+  } else {
+    const grandTotalHdr = fys.length > 1 ? `<th class="section-val">Grand Total</th>` : '';
+    const cmpHdrs = showCmp
+      ? `<th class="section-val fc-cmp">${compareVer}</th><th class="section-val fc-cmp">&Delta; $</th><th class="section-val fc-cmp">&Delta; %</th>` : '';
+    headerCols = monthColsBlock() + fyTotalHdrsBlock() + grandTotalHdr + cmpHdrs;
+  }
 
   const html = [];
   html.push(`<table class="bva"><thead>`);
-  html.push(`<tr class="group-row"><th>Category / Account</th>${headerCols}${grandTotalHdr}${cmpHdrs}</tr>`);
+  html.push(`<tr class="group-row"><th>Category / Account</th>${headerCols}</tr>`);
   html.push(`</thead><tbody>`);
 
-  const grandPerFy = {};
-  fys.forEach(fy => grandPerFy[fy] = new Array(12).fill(0));
+  const grandPerFy = {}, grandPerFyCmp = {};
+  fys.forEach(fy => { grandPerFy[fy] = new Array(12).fill(0); grandPerFyCmp[fy] = new Array(12).fill(0); });
 
   stdOrder.forEach(cat => {
     const accts = catData[cat] || {};
@@ -6217,21 +6178,19 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
     });
     fys.forEach(fy => catPerFy[fy].forEach((v,i) => { grandPerFy[fy][i] += v; }));
 
-    const cells = rowCellsHtml(catPerFy, { boldTotals: true });
-    let cmpCellsHtml = '';
+    const acctsCmp = catDataCmp[cat] || {};
+    const catPerFyCmp = {};
+    fys.forEach(fy => catPerFyCmp[fy] = new Array(12).fill(0));
     if (showCmp){
-      const acctsCmp = catDataCmp[cat] || {};
-      const catPerFyCmp = {};
-      fys.forEach(fy => catPerFyCmp[fy] = new Array(12).fill(0));
       Object.values(acctsCmp).forEach(byFy => {
         fys.forEach(fy => (byFy[fy]||[]).forEach((v,i) => { catPerFyCmp[fy][i] += v; }));
       });
-      const pTot = Object.values(catPerFy).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-      const cTot = Object.values(catPerFyCmp).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-      cmpCellsHtml = cmpCells(pTot, cTot);
+      fys.forEach(fy => catPerFyCmp[fy].forEach((v,i) => { grandPerFyCmp[fy][i] += v; }));
     }
+
+    const cells = rowHtmlForMode(catPerFy, catPerFyCmp, { boldTotals: true });
     html.push(`<tr class="fc-bva-cat bva" data-fc-cat="${cat}">
-      <td>${cat}</td>${cells}${cmpCellsHtml}
+      <td>${cat}</td>${cells}
     </tr>`);
 
     const acctsList = Object.entries(accts).map(([acctBase, byFy]) => {
@@ -6245,16 +6204,10 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
       const acctName = acctNameMapBase[acctBase] || acctBase;
       const display = acctName && acctName !== acctBase
         ? `<span style="color:var(--gray)">${acctBase}</span> ${acctName}` : acctBase;
-      const acctCells = rowCellsHtml(byFy);
-      let acctCmpHtml = '';
-      if (showCmp){
-        const cmpByFy = (catDataCmp[cat] || {})[acctBase] || {};
-        const pTot = Object.values(byFy).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-        const cTot = Object.values(cmpByFy).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-        acctCmpHtml = cmpCells(pTot, cTot);
-      }
+      const cmpByFy = showCmp ? ((catDataCmp[cat] || {})[acctBase] || {}) : {};
+      const acctCells = rowHtmlForMode(byFy, cmpByFy);
       html.push(`<tr class="fc-bva-acct bva" data-fc-parent="${cat}" data-fc-acct="${acctBase}" style="display:none">
-        <td style="padding-left:28px"><span style="color:var(--cyan);font-size:9px;margin-right:4px">&#9656;</span>${display}</td>${acctCells}${acctCmpHtml}
+        <td style="padding-left:28px"><span style="color:var(--cyan);font-size:9px;margin-right:4px">&#9656;</span>${display}</td>${acctCells}
       </tr>`);
 
       const linesByDesc = lineDataByAcct[acctBase] || {};
@@ -6266,13 +6219,7 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
       linesList.sort((a,b) => Math.abs(b.total) - Math.abs(a.total));
 
       linesList.forEach(({ info }) => {
-        const lineCells = rowCellsHtml(info.byFy);
-        let lineCmpHtml = '';
-        if (showCmp){
-          const pTot = Object.values(info.byFy).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-          const cTot = Object.values(info.byFyCmp || {}).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-          lineCmpHtml = cmpCells(pTot, cTot);
-        }
+        const lineCells = rowHtmlForMode(info.byFy, info.byFyCmp || {});
         const srcTag = info.sourceTag;
         const srcLabel = srcTag === 'CONTRACT_LABOR' ? '<span class="fc-src-tag cl">CL</span>'
                        : srcTag === 'TRAVEL_ENT' ? '<span class="fc-src-tag tr">Trv</span>'
@@ -6282,61 +6229,18 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
         const descTxt = info.desc || '<em style="color:var(--gray)">(no description)</em>';
         const vendorTxt = info.vendor ? ` <span style="color:var(--gray);font-size:10px">/ ${info.vendor}</span>` : '';
         html.push(`<tr class="fc-bva-line bva" data-fc-cat="${cat}" data-fc-acct-parent="${acctBase}" style="display:none">
-          <td style="padding-left:52px;color:var(--navy);font-size:11.5px">${srcLabel} ${descTxt}${vendorTxt}</td>${lineCells}${lineCmpHtml}
+          <td style="padding-left:52px;color:var(--navy);font-size:11.5px">${srcLabel} ${descTxt}${vendorTxt}</td>${lineCells}
         </tr>`);
       });
     });
   });
 
-  const grandCells = rowCellsHtml(grandPerFy, { boldTotals: true });
-  let grandCmp = '';
-  if (showCmp){
-    const grandCmpTotal = Object.values(catDataCmp).reduce((s, accts) => {
-      return s + Object.values(accts).reduce((sa, byFy) => sa + Object.values(byFy).reduce((sf, arr) => sf + arr.reduce((a,b)=>a+b,0), 0), 0);
-    }, 0);
-    const grandPrimary = Object.values(grandPerFy).reduce((s, arr) => s + arr.reduce((a,b)=>a+b,0), 0);
-    grandCmp = cmpCells(grandPrimary, grandCmpTotal);
-  }
-  html.push(`<tr class="subtotal"><td>Total</td>${grandCells}${grandCmp}</tr>`);
+  const grandCells = rowHtmlForMode(grandPerFy, grandPerFyCmp, { boldTotals: true });
+  html.push(`<tr class="subtotal"><td>Total</td>${grandCells}</tr>`);
   html.push(`</tbody></table>`);
   return html.join('');
 }
 
-// ---- Forecast Summary (legacy — kept for backward compat, delegates to buildFcSummaryCard) ----
-function renderFcSummaryGrid(ver, fy, tabName, verKey){
-  const content = document.getElementById('fc-content');
-  // Collect all sources
-  const sources = [['PLANNING_GENERAL','SALARIES_WAGES','TOPSIDE_ADJUSTMENTS'],'CONTRACT_LABOR','TRAVEL_ENT'];
-  const srcLabel = {PLANNING_GENERAL:'OPEX', SALARIES_WAGES:'OPEX', TOPSIDE_ADJUSTMENTS:'OPEX', CONTRACT_LABOR:'Contract Labor', TRAVEL_ENT:'Travel'};
-  const allLines = [];
-  sources.forEach(src => {
-    const primarySrc = Array.isArray(src) ? src[0] : src;
-    let lines = collectFcLines(src, ver, fy);
-    lines = applyOverrides(lines, ACTIVE_SLUG, verKey, primarySrc);
-    lines.forEach(l => allLines.push(Object.assign({}, l, {_srcLabel: srcLabel[l.source]||l.source||primarySrc})));
-  });
-  if (!allLines.length){
-    content.innerHTML = `<div class="spinner">No forecast data for ${ver} in this section.</div>`;
-    return;
-  }
-  const { html: gridHtml, grandTot, grandMonthly } = buildFcBvaGrid(allLines, ACTIVE_SLUG, verKey, 'ALL', false);
-  content.innerHTML = `<div class="card">
-    <div class="card-h">Forecast Summary — ${ver}
-      <span class="meta">${tabName} · ${allLines.length} lines · FY Total ${fmtUSD(grandTot)}</span>
-    </div>
-    <div class="bva-wrap">${gridHtml}</div>
-  </div>`;
-  // Wire category toggles
-  content.querySelectorAll('tr.fc-bva-cat').forEach(tr => {
-    tr.onclick = () => {
-      const cat = tr.dataset.fcCat;
-      const isOpen = tr.classList.toggle('open');
-      content.querySelectorAll(`tr.fc-bva-line[data-fc-parent="${CSS.escape(cat)}"]`).forEach(r => {
-        r.style.display = isOpen ? '' : 'none';
-      });
-    };
-  });
-}
 
 // Legacy showForecastView kept for any residual calls — now delegates to setViewMode
 function showForecastView(show){
