@@ -521,6 +521,7 @@ def main():
             "dept_str": ds,
             "description": r.get("description"), "vendor": r.get("vendor"),
             "channel": r.get("channel"), "expense_type": r.get("expense_type"),
+            "amortization_schedule": r.get("amortization_schedule"),
             "amount": amt, "source": "PLANNING_GENERAL",
         })
         attach_dept_forecast(r, "PG")

@@ -1725,6 +1725,17 @@ function applyPrepaidToForecasts(){
     Object.entries(prepaidByVer).forEach(([vKey, lines]) => {
       const arr = a.forecasts?.[vKey];
       if (!arr) return;
+      // Cross-FY spillover target: same version name, next fiscal year — mirrors
+      // collectFcLines()'s "Prior-FY prepaid spillover" block (which pulls FY N-1's
+      // tail INTO FY N), just run forward instead of backward so the main grid (not
+      // just the Forecast tab) sees the tail that lands past month 12 instead of
+      // silently losing it. If the version name doesn't genuinely continue into next
+      // FY (e.g. an annual-snapshot AOP), this just creates an addressable, selectable
+      // next-FY entry under that version name rather than merging into whatever the
+      // grid already shows by default for that FY — nothing is ever silently dropped.
+      const fy = lines[0].fy;
+      const ver = lines[0].version;
+      const nextVKey = `${ver} | FY${fy + 1}`;
       const groups = {};
       lines.forEach(l => {
         const key = [l.description||'', l.vendor||'', l.level_code||'', l.dept_str||''].join('|');
@@ -1736,25 +1747,38 @@ function applyPrepaidToForecasts(){
         const nonZero = g.monthly.map((v,i) => Math.abs(v) > 0.01 ? i : -1).filter(i => i >= 0);
         if (nonZero.length === 0) return;
         const segments = prepaidSegments(g.monthly, nonZero, g.sample.amortization_schedule);
-        function applySegs(target){
+        function applySegs(target, nextTarget){
           if (!target) return;
           segments.forEach(({fm0, payment, gap}) => {
             target[fm0] -= payment;
             const perMonth = payment / gap;
             for (let i = 0; i < gap; i++){
               const m = fm0 + i;
-              if (m > 11) break;
+              if (m > 11){
+                if (nextTarget) nextTarget[m - 12] += perMonth;
+                continue;
+              }
               target[m] += perMonth;
             }
           });
         }
-        applySegs(arr);
+        if (!a.forecasts[nextVKey]) a.forecasts[nextVKey] = new Array(12).fill(0);
+        applySegs(arr, a.forecasts[nextVKey]);
+
         const lc = (g.sample.level_code||'').trim();
         let coStr = '';
         try { coStr = lc ? String(parseInt(lc,10)) : ''; } catch(e){}
-        if (coStr) applySegs(a.forecasts_by_company?.[vKey]?.[coStr]);
+        if (coStr && a.forecasts_by_company?.[vKey]?.[coStr]){
+          if (!a.forecasts_by_company[nextVKey]) a.forecasts_by_company[nextVKey] = {};
+          if (!a.forecasts_by_company[nextVKey][coStr]) a.forecasts_by_company[nextVKey][coStr] = new Array(12).fill(0);
+          applySegs(a.forecasts_by_company[vKey][coStr], a.forecasts_by_company[nextVKey][coStr]);
+        }
         const ds = (g.sample.dept_str||'').trim();
-        if (ds) applySegs(a.forecasts_by_dept?.[vKey]?.[ds]);
+        if (ds && a.forecasts_by_dept?.[vKey]?.[ds]){
+          if (!a.forecasts_by_dept[nextVKey]) a.forecasts_by_dept[nextVKey] = {};
+          if (!a.forecasts_by_dept[nextVKey][ds]) a.forecasts_by_dept[nextVKey][ds] = new Array(12).fill(0);
+          applySegs(a.forecasts_by_dept[vKey][ds], a.forecasts_by_dept[nextVKey][ds]);
+        }
       });
     });
   });
@@ -2126,6 +2150,9 @@ function channelActualsMonthly(rec, fy, effCo){
 // chOk()) — otherwise we can't attribute it to whichever channel subset is selected.
 function channelForecastMonthly(rec, verKey, effCo){
   const narrowed = channelFilterIsNarrowed();
+  const vm = verKey.match(/^(.*) \| FY(\d+)$/);
+  const ver = vm ? vm[1] : null;
+  const fy = vm ? +vm[2] : null;
   const lines = (rec.forecast_lines || []).filter(l => (l.version + ' | FY' + l.fy) === verKey);
   const amortized = (typeof amortizePrepaidsInLines === 'function') ? amortizePrepaidsInLines(lines) : lines;
   const monthly = new Array(12).fill(0);
@@ -2137,6 +2164,37 @@ function channelForecastMonthly(rec, verKey, effCo){
     const fm = l.fm; if (!fm || fm < 1 || fm > 12) return;
     monthly[fm-1] += (l.amount || 0);
   });
+
+  // Prior-FY prepaid spillover — mirrors collectFcLines()'s equivalent block (and
+  // applyPrepaidToForecasts()'s cross-FY injection for the unfiltered grid), so a
+  // channel/company-filtered forecast series doesn't drop the tail of a prepaid line
+  // that started in the prior fiscal year.
+  if (ver && fy){
+    const priorLines = (rec.forecast_lines || []).filter(l =>
+      l.version === ver && l.fy === fy - 1 && (l.expense_type||'').toLowerCase() === 'prepaid' && !l._amortized);
+    if (priorLines.length){
+      const groups = {};
+      priorLines.forEach(l => {
+        const key = [l.description||'', l.vendor||'', l.level_code||'', l.dept_str||''].join('|');
+        if (!groups[key]) groups[key] = { monthly: new Array(12).fill(0), sample: l };
+        if (l.fm>=1 && l.fm<=12) groups[key].monthly[l.fm-1] += (l.amount || 0);
+      });
+      Object.values(groups).forEach(g => {
+        const co = g.sample.level_code ? String(parseInt(g.sample.level_code,10)) : '';
+        if (co && effCo && effCo.size > 0 && !effCo.has(co)) return;
+        const chOk = narrowed ? (g.sample.channel != null && STATE.selectedChannels.has(String(g.sample.channel))) : true;
+        if (!chOk) return;
+        const nonZero = g.monthly.map((v,i) => Math.abs(v) > 0.01 ? i : -1).filter(i => i >= 0);
+        if (nonZero.length === 0) return;
+        const segments = prepaidSegments(g.monthly, nonZero, g.sample.amortization_schedule);
+        segments.forEach(({fm0, payment, gap}) => {
+          const perMonth = payment / gap;
+          const tail = Math.max(0, gap - (12 - fm0));
+          for (let i = 0; i < Math.min(tail, 12); i++) monthly[i] += perMonth;
+        });
+      });
+    }
+  }
   return monthly;
 }
 
@@ -6843,6 +6901,10 @@ function applyPrepaidToForecasts_OV(d){
     Object.entries(prepaidByVer).forEach(([vKey, lines]) => {
       const arr = a.forecasts?.[vKey];
       if (!arr) return;
+      // Same cross-FY spillover as applyPrepaidToForecasts() — keep in sync.
+      const fy = lines[0].fy;
+      const ver = lines[0].version;
+      const nextVKey = `${ver} | FY${fy + 1}`;
       const groups = {};
       lines.forEach(l => {
         const key = [l.description||'', l.vendor||'', l.level_code||'', l.dept_str||''].join('|');
@@ -6853,21 +6915,35 @@ function applyPrepaidToForecasts_OV(d){
         const nonZero = g.monthly.map((v,i) => Math.abs(v) > 0.01 ? i : -1).filter(i => i >= 0);
         if (nonZero.length === 0) return;
         const segments = prepaidSegments(g.monthly, nonZero, g.sample.amortization_schedule);
-        function applySegs(target){
+        function applySegs(target, nextTarget){
           if (!target) return;
           segments.forEach(({fm0, payment, gap}) => {
             target[fm0] -= payment;
             const perMonth = payment / gap;
-            for (let i = 0; i < gap; i++){ const m = fm0 + i; if (m > 11) break; target[m] += perMonth; }
+            for (let i = 0; i < gap; i++){
+              const m = fm0 + i;
+              if (m > 11){ if (nextTarget) nextTarget[m - 12] += perMonth; continue; }
+              target[m] += perMonth;
+            }
           });
         }
-        applySegs(arr);
+        if (!a.forecasts[nextVKey]) a.forecasts[nextVKey] = new Array(12).fill(0);
+        applySegs(arr, a.forecasts[nextVKey]);
+
         const lc = (g.sample.level_code||'').trim();
         let coStr = '';
         try { coStr = lc ? String(parseInt(lc,10)) : ''; } catch(e){}
-        if (coStr) applySegs(a.forecasts_by_company?.[vKey]?.[coStr]);
+        if (coStr && a.forecasts_by_company?.[vKey]?.[coStr]){
+          if (!a.forecasts_by_company[nextVKey]) a.forecasts_by_company[nextVKey] = {};
+          if (!a.forecasts_by_company[nextVKey][coStr]) a.forecasts_by_company[nextVKey][coStr] = new Array(12).fill(0);
+          applySegs(a.forecasts_by_company[vKey][coStr], a.forecasts_by_company[nextVKey][coStr]);
+        }
         const ds = (g.sample.dept_str||'').trim();
-        if (ds) applySegs(a.forecasts_by_dept?.[vKey]?.[ds]);
+        if (ds && a.forecasts_by_dept?.[vKey]?.[ds]){
+          if (!a.forecasts_by_dept[nextVKey]) a.forecasts_by_dept[nextVKey] = {};
+          if (!a.forecasts_by_dept[nextVKey][ds]) a.forecasts_by_dept[nextVKey][ds] = new Array(12).fill(0);
+          applySegs(a.forecasts_by_dept[vKey][ds], a.forecasts_by_dept[nextVKey][ds]);
+        }
       });
     });
   });
