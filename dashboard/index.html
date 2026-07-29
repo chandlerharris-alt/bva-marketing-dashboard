@@ -706,6 +706,10 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
       <div>Reclass Suggestions</div>
       <div class="owner">All tabs</div>
     </div>
+    <div class="sb-tab" id="sb-variance-tab" data-slug="variance" onclick="loadVarianceTabView()">
+      <div>Variance Invest/Divest</div>
+      <div class="owner">By region</div>
+    </div>
     <!-- Contacts + Calendar tabs were Member Care-only and have been removed for Marketing. -->
   </div>
   <!-- Admin section (hidden unless current user has role=admin) — pinned to the bottom of the
@@ -984,6 +988,11 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
     <div id="data-controls-content"><div class="spinner">Loading…</div></div>
   </div>
 
+  <!-- ===== Variance Investment / Divestment view ===== -->
+  <div id="variance-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
+    <div id="variance-content"><div class="spinner">Loading…</div></div>
+  </div>
+
   <!-- ===== Contacts view ===== -->
   <div id="contacts-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
     <div id="contacts-content"><div class="spinner">Loading contacts data…</div></div>
@@ -1076,6 +1085,42 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
     <div class="modal-footer">
       <button class="btn-sm" onclick="closeReclassModal()">Cancel</button>
       <button class="btn-sm btn-primary" id="rc-submit-btn" onclick="submitReclassForm()">Submit Suggestion</button>
+    </div>
+  </div>
+</div>
+
+<!-- Variance Investment/Divestment allocation modal -->
+<div class="modal-backdrop" id="var-alloc-modal">
+  <div class="modal" style="position:relative">
+    <button class="close-btn" onclick="closeVarAllocModal()">&#10005;</button>
+    <h3>Allocate Variance</h3>
+    <div id="va-summary" style="font-size:12px;color:var(--gray);background:var(--gray-50);border-radius:6px;padding:8px 12px;margin-bottom:14px"></div>
+    <div class="form-row">
+      <div class="form-field"><label>Amount ($)</label><input id="va-amount" type="number" step="1" placeholder="e.g. 200000"></div>
+      <div class="form-field"><label>Target Month</label>
+        <select id="va-target-fm">
+          <option value="1">Jun (FM01)</option><option value="2">Jul (FM02)</option>
+          <option value="3">Aug (FM03)</option><option value="4">Sep (FM04)</option>
+          <option value="5">Oct (FM05)</option><option value="6">Nov (FM06)</option>
+          <option value="7">Dec (FM07)</option><option value="8">Jan (FM08)</option>
+          <option value="9">Feb (FM09)</option><option value="10">Mar (FM10)</option>
+          <option value="11">Apr (FM11)</option><option value="12">May (FM12)</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field" style="flex:2"><label>GL Account</label><select id="va-account"></select></div>
+      <div class="form-field"><label>Department</label><input id="va-dept" type="text" placeholder="e.g. 075"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Tag</label><input id="va-tag" type="text" placeholder="e.g. top-of-funnel-reinvest"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Description</label><input id="va-desc" type="text" placeholder="Why this reinvestment/pullback"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-sm" onclick="closeVarAllocModal()">Cancel</button>
+      <button class="btn-sm btn-primary" id="va-submit-btn" onclick="submitVarAllocForm()">Submit Allocation</button>
     </div>
   </div>
 </div>
@@ -1415,6 +1460,7 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
 // the full list regardless of which tab is active), so hydrate once here rather than per-loadTab().
 hydrateReclassFromServer();
 hydrateTxnTypesFromServer();
+hydrateVarianceAllocFromServer();
 
 function renderSidebar(){
   const el = document.getElementById('sb-tabs');
@@ -1527,6 +1573,7 @@ function loadTab(slug){
   hideCalendarView();
   hideReclassView();
   hideDataControlsView();
+  hideVarianceTabView();
   const av = document.getElementById('admin-view');
   if (av) av.style.display = 'none';
 
@@ -6746,6 +6793,7 @@ function loadOverview(){
   if (calView) calView.style.display = 'none';
   hideReclassView();
   hideDataControlsView();
+  hideVarianceTabView();
   if (filterbar) filterbar.style.display = 'none';
   if (vmBar) vmBar.style.display = 'none';
   if (ovView) ovView.style.display = 'flex';
@@ -7555,6 +7603,441 @@ async function deleteReclassSuggestion(slug, id){
 function reclassRefreshCurrentView(){
   if (ACTIVE_SLUG === 'reclass'){ if (typeof renderReclassView === 'function') renderReclassView(); return; }
   if (DATA && typeof render === 'function') render();
+}
+
+// ===== Variance Investment/Divestment allocations — same shared-file, safe-upsert pattern
+// as RECLASS above, cloned from functions/api/reclass.js's server-side twin. =====
+let VARIANCE_ALLOC = { allocations: {}, loaded: false };
+async function hydrateVarianceAllocFromServer(){
+  try {
+    const r = await fetch('/api/variance-allocations', { credentials: 'include', cache: 'no-store' });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || j.error) return;
+    VARIANCE_ALLOC.allocations = j.allocations || {};
+    VARIANCE_ALLOC.loaded = true;
+    if (ACTIVE_SLUG === 'variance' && typeof renderVarianceTabView === 'function') renderVarianceTabView();
+  } catch(e){}
+}
+function genVarianceAllocId(){ return 'va-' + Date.now() + '-' + Math.floor(Math.random()*1000); }
+async function submitVarianceAllocation(allocation){
+  const id = allocation.id || genVarianceAllocId();
+  const full = { ...allocation, id };
+  const r = await fetch('/api/variance-allocations', {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'submit', allocation: full }),
+  });
+  if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+  const j = await r.json();
+  VARIANCE_ALLOC.allocations[id] = j.record || full;
+  return VARIANCE_ALLOC.allocations[id];
+}
+async function approveVarianceAllocation(id){
+  const r = await fetch('/api/variance-allocations', {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'approve', id }),
+  });
+  if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+  const j = await r.json();
+  if (j.record) VARIANCE_ALLOC.allocations[id] = j.record;
+  return VARIANCE_ALLOC.allocations[id];
+}
+async function deleteVarianceAllocation(id){
+  const r = await fetch('/api/variance-allocations', {
+    method: 'POST', credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'delete', id }),
+  });
+  if (!r.ok){ const t = await r.text().catch(()=>r.statusText); throw new Error('HTTP ' + r.status + ' ' + t); }
+  delete VARIANCE_ALLOC.allocations[id];
+}
+
+// ===== Variance Investment/Divestment — region rollup + allocation UI =====
+// Own dedicated dataset fetch (VARIANCE_DATA), deliberately NOT the shared global DATA:
+// initTab()/scopeAccountsForTab() mutate DATA.accounts in place down to one tab's account
+// subset (advertising-only for media, non-advertising for marketing) depending on whichever
+// slug was active when it last ran — reusing DATA here would silently lose whichever half
+// of the account universe (fixed OPEX vs advertising) this tab needs simultaneously.
+let VARIANCE_DATA = null;
+let VAR_STATE = { fy: null, planVersion: null, throughFm: null };
+
+const VAR_METRICS = [
+  { key: 'fixed_opex',    label: 'Fixed OPEX (non-advertising)' },
+  { key: 'paid_media',    label: 'Paid Media (% of revenue)' },
+  { key: 'nonpaid_media', label: 'Non-Paid Media (% of revenue)' },
+];
+
+function varDefaultPlanVersion(fy){
+  const avail = (VARIANCE_DATA?.meta?.available_versions || []).filter(v => v.endsWith('| FY'+fy));
+  const names = [...new Set(avail.map(v => v.replace(/\s*\|\s*FY\d+$/, '')))];
+  return names.find(v => /AOP Final/i.test(v)) || names.find(v => /AOP/i.test(v)) || names[0] || 'Working Forecast';
+}
+
+// Company-scoped monthly $, always FX-converted to USD (a cross-region rollup shouldn't mix
+// currencies) — same math as companyScopedMonthly()/channelForecastMonthly() elsewhere, but
+// parameterized so it works against VARIANCE_DATA instead of the global DATA/STATE.
+function varActualsMonthly(rec, fy, effCo){
+  const cm = (rec.actuals_by_company || {})[fy] || {};
+  const monthly = new Array(12).fill(0);
+  Object.entries(cm).forEach(([c, arr]) => {
+    if (!effCo.has(String(c))) return;
+    for (let i=0;i<12;i++){
+      const v = arr[i] || 0;
+      const r = fxRate(c, fy, i+1, VARIANCE_DATA);
+      monthly[i] += r ? v / r : v;
+    }
+  });
+  return monthly;
+}
+function varForecastMonthly(rec, verKey, fy, effCo){
+  const byCo = (rec.forecasts_by_company || {})[verKey] || {};
+  const monthly = new Array(12).fill(0);
+  Object.entries(byCo).forEach(([c, arr]) => {
+    if (!effCo.has(String(c))) return;
+    for (let i=0;i<12;i++){
+      const v = arr[i] || 0;
+      const r = fxRate(c, fy, i+1, VARIANCE_DATA);
+      monthly[i] += r ? v / r : v;
+    }
+  });
+  return monthly;
+}
+function varSumAccountsMonthly(accts, effCo, fy, verKey, isForecast){
+  const monthly = new Array(12).fill(0);
+  accts.forEach(a => {
+    const arr = isForecast ? varForecastMonthly(a, verKey, fy, effCo) : varActualsMonthly(a, fy, effCo);
+    for (let i=0;i<12;i++) monthly[i] += arr[i];
+  });
+  return monthly;
+}
+// Advertising's "rate of sales" variance, dollarized: at the planned ad-spend-as-%-of-revenue
+// rate, actual revenue would have supported (planPct * actualRevenue) of spend; the gap
+// between that and what was actually spent is the $ over/underspend on a sales-rate basis
+// (distinct from a flat $-to-plan comparison, which wouldn't account for revenue coming in
+// above/below plan). bps mirrors pctRowMedia()'s existing on-screen formula for the label.
+function varRateVariance(planSpend, actualSpend, planRev, actualRev){
+  const dollarVar = new Array(12).fill(0);
+  const bps = new Array(12).fill(null);
+  for (let i=0;i<12;i++){
+    const planPct = Math.abs(planRev[i]) > 0.5 ? planSpend[i]/planRev[i] : null;
+    const actualPct = Math.abs(actualRev[i]) > 0.5 ? actualSpend[i]/actualRev[i] : null;
+    if (planPct == null || actualPct == null) continue;
+    bps[i] = Math.round((planPct - actualPct) * 10000);
+    dollarVar[i] = planPct * actualRev[i] - actualSpend[i];
+  }
+  return { plan: planSpend, actual: actualSpend, variance: dollarVar, bps };
+}
+
+// Full region x metric rollup for one fiscal year, vs one Plan version. Fixed OPEX uses a
+// plain $ plan-minus-actual (Chandler's "no fancy math"); advertising uses the rate-of-sales
+// dollarization above, split paid vs non-paid.
+function computeVarianceRegionData(fy, planVerKey){
+  const accts = (VARIANCE_DATA && VARIANCE_DATA.accounts) || [];
+  const fixedAccts = accts.filter(a => !MKTG_AD_ACCTS.has(a.reporting_account) && a.category !== 'Revenue');
+  const paidAccts = accts.filter(a => MEDIA_PAID_ACCTS.includes(a.reporting_account));
+  const nonpaidAccts = accts.filter(a => MKTG_AD_ACCTS.has(a.reporting_account) && !MEDIA_PAID_ACCTS.includes(a.reporting_account));
+  const revAccts = accts.filter(a => isRevenueAccount(a.reporting_account));
+
+  const out = {};
+  MEDIA_REGION_ORDER.forEach(region => {
+    const effCo = new Set((MEDIA_REGION_COMPANIES[region]||[]).map(String));
+    const fixedActual = varSumAccountsMonthly(fixedAccts, effCo, fy, null, false);
+    const fixedPlan   = varSumAccountsMonthly(fixedAccts, effCo, fy, planVerKey, true);
+    const paidActual = varSumAccountsMonthly(paidAccts, effCo, fy, null, false);
+    const paidPlan   = varSumAccountsMonthly(paidAccts, effCo, fy, planVerKey, true);
+    const nonpaidActual = varSumAccountsMonthly(nonpaidAccts, effCo, fy, null, false);
+    const nonpaidPlan   = varSumAccountsMonthly(nonpaidAccts, effCo, fy, planVerKey, true);
+    const revActual = varSumAccountsMonthly(revAccts, effCo, fy, null, false);
+    const revPlan   = varSumAccountsMonthly(revAccts, effCo, fy, planVerKey, true);
+
+    out[region] = {
+      fixed_opex: { plan: fixedPlan, actual: fixedActual, variance: fixedPlan.map((v,i) => v - fixedActual[i]) },
+      paid_media: varRateVariance(paidPlan, paidActual, revPlan, revActual),
+      nonpaid_media: varRateVariance(nonpaidPlan, nonpaidActual, revPlan, revActual),
+    };
+  });
+  return out;
+}
+
+function varAllocationsFor(region, metric, fy){
+  return Object.values(VARIANCE_ALLOC.allocations || {})
+    .filter(a => a.region === region && a.metric === metric && a.fy === fy);
+}
+// Cumulative YTD variance (through throughFm) minus every submitted allocation drawn against
+// this region+metric+fy so far this year — reduces on submit, not gated on approval, per
+// Chandler's own framing ("reduced depending on how much we add to future periods").
+function varRunningTotal(regionData, region, metric, fy, throughFm){
+  const arr = regionData[region][metric].variance;
+  const ytd = sum(arr.slice(0, throughFm));
+  const allocated = sum(varAllocationsFor(region, metric, fy).map(a => a.amount || 0));
+  return ytd - allocated;
+}
+
+function loadVarianceTabView(){
+  closeSidebarDrawer();
+  STATE.viewMode = 'bva';
+  STATE.subSection = null;
+  const ovView = document.getElementById('overview-view');
+  if (ovView) ovView.style.display = 'none';
+  hideForecastPane();
+  hideContactsView();
+  hideCalendarView();
+  hideReclassView();
+  hideDataControlsView();
+  const bvBody = document.getElementById('bva-body');
+  if (bvBody) bvBody.style.display = 'none';
+  const filterbar = document.querySelector('.filterbar');
+  if (filterbar) filterbar.style.display = 'none';
+  const vmBar = document.getElementById('view-mode-bar');
+  if (vmBar) vmBar.style.display = 'none';
+  const av = document.getElementById('admin-view');
+  if (av) av.style.display = 'none';
+
+  ACTIVE_SLUG = 'variance';
+  document.querySelectorAll('.sb-tab').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
+  document.getElementById('sb-variance-tab').classList.add('active');
+  const breadcrumb = document.getElementById('breadcrumb-area');
+  if (breadcrumb) breadcrumb.style.display = 'none';
+  document.getElementById('page-title').textContent = 'Variance Investment / Divestment';
+  document.getElementById('dept-sub').textContent = 'Fixed OPEX + advertising variance to plan, by region';
+
+  const vv = document.getElementById('variance-view');
+  if (vv) vv.style.display = 'flex';
+
+  if (!VAR_STATE.fy) VAR_STATE.fy = currentFyFm().fy;
+  if (!VAR_STATE.throughFm) VAR_STATE.throughFm = currentFyFm().fm;
+
+  const ready = () => {
+    if (!VAR_STATE.planVersion) VAR_STATE.planVersion = varDefaultPlanVersion(VAR_STATE.fy);
+    if (!VARIANCE_ALLOC.loaded) hydrateVarianceAllocFromServer().then(renderVarianceTabView);
+    renderVarianceTabView();
+  };
+  if (VARIANCE_DATA){ ready(); return; }
+  document.getElementById('variance-content').innerHTML = '<div class="spinner">Loading…</div>';
+  fetch('../data/marketing.json', {cache:'no-store'}).then(r => r.json())
+    .then(d => { VARIANCE_DATA = d; ready(); })
+    .catch(err => { document.getElementById('variance-content').innerHTML = '<div class="spinner">Failed to load data: '+err+'</div>'; });
+}
+
+function varFmtBps(bps){
+  if (bps == null) return '—';
+  const cls = bps > 0 ? 'fav' : bps < 0 ? 'unfav' : 'muted';
+  const txt = bps > 0 ? `+${bps} bps` : bps < 0 ? `(${Math.abs(bps)} bps)` : '0 bps';
+  return `<span class="${cls}">${txt}</span>`;
+}
+
+function renderVarianceTabView(){
+  const content = document.getElementById('variance-content');
+  if (!content || !VARIANCE_DATA) return;
+  const fy = VAR_STATE.fy;
+  const throughFm = VAR_STATE.throughFm;
+  const planVer = VAR_STATE.planVersion;
+  const regionData = computeVarianceRegionData(fy, planVer + ' | FY' + fy);
+  const canEdit = authCan('marketing', 'forecast') || authCan('media', 'forecast');
+  const isAdmin = authIsAdmin();
+
+  const fyOpts = [fy-1, fy, fy+1].map(f => `<option value="${f}" ${f===fy?'selected':''}>FY${f-2000}</option>`).join('');
+  const availVerNames = [...new Set((VARIANCE_DATA.meta.available_versions||[])
+    .filter(v => v.endsWith('| FY'+fy)).map(v => v.replace(/\s*\|\s*FY\d+$/,'')))];
+  const verOpts = availVerNames.map(v => `<option value="${v.replace(/"/g,'&quot;')}" ${v===planVer?'selected':''}>${v}</option>`).join('');
+  const fmOpts = FM_LABELS.map((m,i) => `<option value="${i+1}" ${i+1===throughFm?'selected':''}>${m} (FM${String(i+1).padStart(2,'0')})</option>`).join('');
+
+  const controls = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#fafcff;border:1px solid var(--border);border-radius:6px">
+      <div class="fc-fb-group"><label class="fc-fb-label">Fiscal Year</label>
+        <select id="var-fy-sel" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">${fyOpts}</select>
+      </div>
+      <div class="fc-fb-group"><label class="fc-fb-label">Plan Version</label>
+        <select id="var-ver-sel" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">${verOpts}</select>
+      </div>
+      <div class="fc-fb-group"><label class="fc-fb-label">YTD Through</label>
+        <select id="var-fm-sel" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">${fmOpts}</select>
+      </div>
+      <span style="font-size:11px;color:var(--gray);margin-left:auto">Running totals reduce as allocations are submitted (not gated on approval); two distinct admins must approve before an allocation feeds the Working Forecast.</span>
+    </div>`;
+
+  let regionRowsHtml = '';
+  let grandRunning = { fixed_opex: 0, paid_media: 0, nonpaid_media: 0 };
+  MEDIA_REGION_ORDER.forEach(region => {
+    const rd = regionData[region];
+    const cells = VAR_METRICS.map(({key}) => {
+      const running = varRunningTotal(regionData, region, key, fy, throughFm);
+      grandRunning[key] += running;
+      const cls = running > 0.5 ? 'fav' : running < -0.5 ? 'unfav' : 'muted';
+      const metricNote = key === 'fixed_opex' ? '' : ` (${varFmtBps(sum(rd[key].bps.slice(0,throughFm).filter(b=>b!=null))/Math.max(1,rd[key].bps.slice(0,throughFm).filter(b=>b!=null).length) || 0)} avg)`;
+      return `<td class="num" style="min-width:130px">
+        <div class="${cls}" style="font-weight:600">${fmtUSD(running)}</div>
+        <button class="btn-sm" style="margin-top:4px;padding:2px 8px;font-size:10px" onclick="openVarAllocModal('${region}','${key}')" ${canEdit?'':'disabled'}>Allocate</button>
+      </td>`;
+    }).join('');
+    regionRowsHtml += `<tr class="bva"><td style="font-weight:600">${region}</td>${cells}</tr>`;
+  });
+  const grandCells = VAR_METRICS.map(({key}) => {
+    const cls = grandRunning[key] > 0.5 ? 'fav' : grandRunning[key] < -0.5 ? 'unfav' : 'muted';
+    return `<td class="num"><strong class="${cls}">${fmtUSD(grandRunning[key])}</strong></td>`;
+  }).join('');
+
+  const table = `
+    <table class="bva"><thead><tr class="group-row">
+      <th>Region</th>${VAR_METRICS.map(m=>`<th class="section-val">${m.label}<br><span style="font-weight:400;font-size:10px;color:var(--gray)">running total, YTD through ${FM_LABELS[throughFm-1]}</span></th>`).join('')}
+    </tr></thead><tbody>
+      ${regionRowsHtml}
+      <tr class="subtotal"><td>Total (all regions)</td>${grandCells}</tr>
+    </tbody></table>`;
+
+  const allAllocs = Object.values(VARIANCE_ALLOC.allocations||{}).filter(a => a.fy === fy).sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+  const allocRows = allAllocs.length ? allAllocs.map(a => {
+    const approvedBy = a.approved_by || [];
+    const approved = a.status === 'approved';
+    const metricLabel = (VAR_METRICS.find(m=>m.key===a.metric)||{}).label || a.metric;
+    const meEmail = (AUTH_STATE && AUTH_STATE.email) || '';
+    const alreadyApprovedByMe = approvedBy.includes(meEmail);
+    const approveBtn = isAdmin
+      ? `<button class="btn-sm" style="padding:2px 8px;font-size:10px" onclick="approveVarAllocClick('${a.id}')" ${(approved||alreadyApprovedByMe)?'disabled':''}>${approved?'Approved':'Approve'}</button>`
+      : '';
+    const delBtn = canEdit ? `<span class="fc-del-icon" title="Remove" onclick="deleteVarAllocClick('${a.id}')">&#10005;</span>` : '';
+    const statusChip = approved
+      ? `<span class="fc-type-badge expense" style="background:#d1fae5;color:#065f46">Approved (${approvedBy.length})</span>`
+      : `<span class="fc-type-badge prepaid">Pending (${approvedBy.length}/2)</span>`;
+    return `<tr class="bva">
+      <td>${a.region}</td><td>${metricLabel}</td>
+      <td class="num ${a.amount>=0?'fav':'unfav'}">${fmtUSD(a.amount)}</td>
+      <td>${FM_LABELS[(a.target_fm||1)-1]} FY${fy-2000}</td>
+      <td>${a.gl_account||'—'}</td><td>${a.department||'—'}</td><td>${a.tag||'—'}</td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${a.description||'—'}</td>
+      <td>${statusChip}</td>
+      <td style="white-space:nowrap">${approveBtn} ${delBtn}</td>
+    </tr>`;
+  }).join('') : `<tr class="bva"><td colspan="9" style="color:var(--gray);text-align:center;padding:16px">No allocations yet for FY${fy-2000}.</td></tr>`;
+
+  const allocTable = `
+    <div class="card"><div class="card-h">Allocations — FY${fy-2000}<span class="meta">${allAllocs.length} total · ${allAllocs.filter(a=>a.status==='approved').length} approved</span></div>
+      <div class="bva-wrap"><table class="bva"><thead><tr class="group-row">
+        <th>Region</th><th>Source Metric</th><th class="section-val">Amount</th><th>Target Month</th>
+        <th>GL</th><th>Dept</th><th>Tag</th><th>Description</th><th>Status</th><th></th>
+      </tr></thead><tbody>${allocRows}</tbody></table></div>
+    </div>`;
+
+  content.innerHTML = `${controls}
+    <div class="card"><div class="card-h">Variance to Plan — running total by region<span class="meta">Fixed OPEX = flat $ to plan. Advertising = rate-of-sales dollarized variance, paid/non-paid split.</span></div>
+      <div class="bva-wrap">${table}</div>
+    </div>
+    ${allocTable}`;
+
+  document.getElementById('var-fy-sel').onchange = e => {
+    VAR_STATE.fy = +e.target.value; VAR_STATE.planVersion = null;
+    VAR_STATE.throughFm = VAR_STATE.fy === currentFyFm().fy ? currentFyFm().fm : 12;
+    renderVarianceTabView();
+  };
+  document.getElementById('var-ver-sel').onchange = e => { VAR_STATE.planVersion = e.target.value; renderVarianceTabView(); };
+  document.getElementById('var-fm-sel').onchange = e => { VAR_STATE.throughFm = +e.target.value; renderVarianceTabView(); };
+}
+
+async function approveVarAllocClick(id){
+  try {
+    const rec = await approveVarianceAllocation(id);
+    if (rec && rec.status === 'approved'){
+      injectApprovedAllocationIntoForecast(rec);
+    }
+    renderVarianceTabView();
+  } catch(e){
+    alert('Approve failed: ' + (e && e.message || e));
+  }
+}
+async function deleteVarAllocClick(id){
+  if (!confirm('Remove this allocation? Its $ will return to the running total.')) return;
+  try {
+    await deleteVarianceAllocation(id);
+    renderVarianceTabView();
+  } catch(e){
+    alert('Delete failed: ' + (e && e.message || e));
+  }
+}
+// Approved allocations feed the live Working Forecast (the only editable version) using the
+// same per-row {fm,amount} schema saveFcRowModal() writes — NOT the read-only Plan version
+// the Variance tab compared against. This rides the Forecast tab's existing localStorage
+// overrides mechanism, so like every other forecast edit it needs a "Save Forecast" click on
+// that tab to actually persist to GitHub for everyone (a pre-existing limitation, not new).
+function injectApprovedAllocationIntoForecast(alloc){
+  const verKey = 'Working Forecast | FY' + alloc.fy;
+  const src = 'PLANNING_GENERAL';
+  const o = loadOverrides();
+  const k = overrideKey('marketing', verKey, src);
+  if (!o[k]) o[k] = { added:[], removed:[], edited:{} };
+  if ((o[k].added||[]).some(a => a._varAllocId === alloc.id)) return;
+  o[k].added.push({
+    id: 'va-fc-' + alloc.id, _varAllocId: alloc.id,
+    description: alloc.description || `Variance allocation — ${alloc.region}`,
+    account: alloc.gl_account || '', vendor: '', dept_str: alloc.department || null,
+    fy: alloc.fy, fm: alloc.target_fm, amount: alloc.amount, expense_type: 'Expense', source: src,
+  });
+  saveOverrides(o);
+}
+
+let _vaModalCtx = null;
+function openVarAllocModal(region, metric){
+  const fy = VAR_STATE.fy;
+  const regionData = computeVarianceRegionData(fy, VAR_STATE.planVersion + ' | FY' + fy);
+  const available = varRunningTotal(regionData, region, metric, fy, VAR_STATE.throughFm);
+  _vaModalCtx = { region, metric, fy, available };
+  const metricLabel = (VAR_METRICS.find(m=>m.key===metric)||{}).label || metric;
+  document.getElementById('va-summary').innerHTML =
+    `${region} · ${metricLabel} · Available running total: <strong class="${available>=0?'fav':'unfav'}">${fmtUSD(available)}</strong>`;
+  document.getElementById('va-amount').value = '';
+  document.getElementById('va-target-fm').value = String(Math.min(12, (VAR_STATE.throughFm||1)+1));
+  document.getElementById('va-dept').value = '';
+  document.getElementById('va-tag').value = '';
+  document.getElementById('va-desc').value = '';
+  const sel = document.getElementById('va-account');
+  sel.innerHTML = '';
+  const seenRA = new Set();
+  (VARIANCE_DATA.accounts || []).forEach(a => {
+    const ra = a.reporting_account;
+    if (seenRA.has(ra)) return; seenRA.add(ra);
+    const opt = document.createElement('option');
+    opt.value = ra; opt.textContent = ra + (a.account_name && a.account_name !== ra ? ' — ' + a.account_name : '');
+    sel.appendChild(opt);
+  });
+  document.getElementById('var-alloc-modal').classList.add('open');
+}
+function closeVarAllocModal(){
+  document.getElementById('var-alloc-modal').classList.remove('open');
+  _vaModalCtx = null;
+}
+async function submitVarAllocForm(){
+  if (!_vaModalCtx) return;
+  const ctx = _vaModalCtx;
+  const amount = +(document.getElementById('va-amount').value || 0);
+  if (!amount){ alert('Enter a nonzero $ amount.'); return; }
+  if (ctx.available >= 0 && amount > ctx.available){
+    if (!confirm(`This exceeds the available running total (${fmtUSD(ctx.available)}). Allocate anyway?`)) return;
+  }
+  if (ctx.available < 0 && amount < ctx.available){
+    if (!confirm(`This exceeds the available (negative) running total (${fmtUSD(ctx.available)}). Allocate anyway?`)) return;
+  }
+  const allocation = {
+    region: ctx.region, metric: ctx.metric, fy: ctx.fy,
+    amount,
+    target_fm: +document.getElementById('va-target-fm').value,
+    gl_account: document.getElementById('va-account').value || null,
+    department: document.getElementById('va-dept').value.trim() || null,
+    tag: document.getElementById('va-tag').value.trim() || null,
+    description: document.getElementById('va-desc').value.trim() || null,
+  };
+  const btn = document.getElementById('va-submit-btn');
+  btn.disabled = true;
+  try {
+    await submitVarianceAllocation(allocation);
+    closeVarAllocModal();
+    renderVarianceTabView();
+  } catch(e){
+    alert('Failed to save allocation: ' + (e && e.message || e));
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 let _rcModalCtx = null;
@@ -9147,6 +9630,10 @@ function hideDataControlsView(){
   const dv = document.getElementById('data-controls-view');
   if (dv) dv.style.display = 'none';
 }
+function hideVarianceTabView(){
+  const vv = document.getElementById('variance-view');
+  if (vv) vv.style.display = 'none';
+}
 function loadReclassView(){
   closeSidebarDrawer();
   STATE.viewMode = 'bva';
@@ -9159,6 +9646,7 @@ function loadReclassView(){
   hideContactsView();
   hideCalendarView();
   hideDataControlsView();
+  hideVarianceTabView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');
@@ -10615,7 +11103,7 @@ async function loadAdmin(){
   if (!authIsAdmin()){ alert('Admin role required.'); return; }
   closeSidebarDrawer();
   STATE.viewMode = 'admin';
-  ['bva-body','contacts-view','overview-view','calendar-view','reclass-view','data-controls-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  ['bva-body','contacts-view','overview-view','calendar-view','reclass-view','data-controls-view','variance-view'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   const filterbar = document.querySelector('.filterbar');
   if (filterbar) filterbar.style.display = 'none';
   const vmb = document.getElementById('view-mode-bar');
@@ -10703,6 +11191,7 @@ async function loadDataControlsView(){
   hideContactsView();
   hideCalendarView();
   hideReclassView();
+  hideVarianceTabView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');
