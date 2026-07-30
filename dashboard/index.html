@@ -353,6 +353,14 @@ tr:hover .fc-del-icon{opacity:1}
 .fc-detail-grid.fc-desc-wide td.fc-desc-cell{max-width:560px}
 .fc-detail-grid.fc-desc-wide .fc-desc-inner{align-items:flex-start}
 .fc-detail-grid.fc-desc-wide .fc-desc-text{overflow:visible; white-space:normal; word-break:break-word}
+.fc-detail-grid td.fc-cell-selected{background:#e0f2fe !important; box-shadow:inset 0 0 0 1px #7dd3fc}
+.fc-detail-grid td.fc-cell-active{outline:2px solid var(--cyan); outline-offset:-2px; background:#bae6fd !important}
+.fc-detail-grid td.fc-cell-copied{outline:2px dashed #0891b2; outline-offset:-2px}
+.fc-detail-grid thead th{position:relative}
+.fc-col-resizer{position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:6; user-select:none}
+.fc-col-resizer:hover{background:rgba(8,145,178,.35)}
+.fc-detail-grid td.fc-cell-display{cursor:cell; user-select:none; -webkit-user-select:none}
+.fc-cell-edit input.fc-cell-input{text-align:right}
 .btn-sm.fc-toggle-on{background:var(--navy); color:#fff; border-color:var(--navy)}
 .fc-src-tag{display:inline-block; padding:0 5px; border-radius:8px; font-size:9px; font-weight:700; letter-spacing:.3px; vertical-align:middle; margin-right:4px}
 .fc-src-tag.pg{background:#dbeafe; color:#1e40af}
@@ -4960,45 +4968,212 @@ function fcEditDesc(td, mk, source){
     if (e.key === 'Escape'){ e.preventDefault(); inp.removeEventListener('blur', save); renderForecastPane(); }
   });
 }
-function fcCellEdit(td){
-  if (td.querySelector('input')) return;
-  const fm = +td.dataset.fm;
-  const mk = td.dataset.mk;
-  const src = td.dataset.source;
-  const verKey = td.dataset.verkey || STATE.fcVersion;
-  const currentText = td.textContent.replace(/[$,\s]/g,'');
-  const currentVal = currentText === '—' || currentText === '' ? 0 : parseFloat(currentText.replace(/[^0-9.\-]/g,'')) || 0;
+/* ============================================================
+   Forecast spreadsheet engine — keyboard nav, range select,
+   formulas, paste, fill, undo/redo, delete, status bar.
+   Interaction-layer only; all writes go through the existing
+   overrides store (loadOverrides/saveOverrides), so Save
+   Forecast and tags are unaffected.
+   ============================================================ */
+let FC_SEL = { anchor:null, focus:null };   // {mk,fm,verkey} coords — survive re-render
+let FC_PENDING_SEL = null;                  // selection to restore after a re-render
+let FC_KEYS_BOUND = false;
+let FC_UNDO = [], FC_REDO = [];
+let FC_CLIP = null;          // internal copy buffer: 2D array of numeric values
+let _fcToastTimer = null;
+let FC_DRAGGING = false;     // true while a click-drag range selection is in progress
+let FC_COLW = null;          // saved column widths {desc,acct,cat,month} — per browser
+let _fcColResize = null;     // in-progress column drag-resize state
+const FC_COLW_KEY = 'bva-fc-colwidths';
 
-  td.classList.remove('fc-cell-display');
-  td.classList.add('fc-cell-edit');
+// ---- coordinate + grid helpers ----
+function fcCellCoords(td){ return { mk:td.dataset.mk, fm:td.dataset.fm, verkey:td.dataset.verkey||'' }; }
+function fcCellGrid(){
+  const grid = document.querySelector('#fc-content .fc-detail-grid');
+  if (!grid) return [];
+  return Array.from(grid.querySelectorAll('tr.fc-bva-line')).map(tr => Array.from(tr.querySelectorAll('td[data-fm]')));
+}
+function fcFindCell(coords){
+  if (!coords) return null;
+  const grid = document.querySelector('#fc-content .fc-detail-grid');
+  if (!grid) return null;
+  return Array.from(grid.querySelectorAll('td[data-fm]')).find(td =>
+    td.dataset.mk === coords.mk && td.dataset.fm === String(coords.fm) && (td.dataset.verkey||'') === (coords.verkey||'')) || null;
+}
+function fcGridPos(g, coords){
+  if (!coords) return null;
+  for (let r=0;r<g.length;r++) for (let c=0;c<g[r].length;c++){
+    const td = g[r][c];
+    if (td.dataset.mk===coords.mk && td.dataset.fm===String(coords.fm) && (td.dataset.verkey||'')===(coords.verkey||'')) return {r,c};
+  }
+  return null;
+}
+function fcNeighbor(td, dir){
+  const g = fcCellGrid();
+  const pos = fcGridPos(g, fcCellCoords(td));
+  if (!pos) return null;
+  let {r,c} = pos;
+  if (dir==='left') c--; else if (dir==='right') c++; else if (dir==='up') r--; else if (dir==='down') r++;
+  if (r<0 || r>=g.length) return null;
+  const row = g[r]; if (!row || !row.length) return null;
+  if (c<0) c=0; if (c>=row.length) c=row.length-1;
+  return row[c] || null;
+}
+
+// ---- value parsing: numbers, k/m shorthand, and =formulas (+ - * / and parens) ----
+function fcParseCellInput(raw){
+  if (raw==null) return {ok:false};
+  let s = String(raw).trim();
+  if (s==='' || s==='—') return {ok:true, value:0};
+  if (s[0]==='=') s = s.slice(1);
+  s = s.replace(/[$,\s]/g,'');
+  if (s==='') return {ok:true, value:0};
+  const short = s.match(/^(-?\d*\.?\d+)([kmKM])$/);
+  if (short){ const n = parseFloat(short[1]); return {ok:true, value: n * (/k/i.test(short[2]) ? 1e3 : 1e6)}; }
+  if (/^-?\d*\.?\d+$/.test(s)) return {ok:true, value: parseFloat(s)};
+  if (!/^[-+*/().\d]+$/.test(s)) return {ok:false};
+  try { const v = fcEvalExpr(s); if (typeof v==='number' && isFinite(v)) return {ok:true, value:v}; } catch(e){}
+  return {ok:false};
+}
+// Safe recursive-descent evaluator — deliberately NOT eval().
+function fcEvalExpr(str){
+  let i = 0;
+  const peek = () => str[i];
+  function expr(){ let v = term(); while (peek()==='+'||peek()==='-'){ const op=str[i++]; const r=term(); v = op==='+'?v+r:v-r; } return v; }
+  function term(){ let v = factor(); while (peek()==='*'||peek()==='/'){ const op=str[i++]; const r=factor(); if (op==='/'){ if (r===0) throw new Error('div0'); v=v/r; } else v=v*r; } return v; }
+  function factor(){ if (peek()==='+'){ i++; return factor(); } if (peek()==='-'){ i++; return -factor(); }
+    if (peek()==='('){ i++; const v=expr(); if (peek()!==')') throw new Error('paren'); i++; return v; } return num(); }
+  function num(){ const start=i; while (i<str.length && /[\d.]/.test(str[i])) i++; if (i===start) throw new Error('num'); return parseFloat(str.slice(start,i)); }
+  const val = expr();
+  if (i !== str.length) throw new Error('trailing');
+  return val;
+}
+
+// ---- selection painting + status bar ----
+function fcSelectedCells(){
+  const g = fcCellGrid(); if (!g.length || !FC_SEL.anchor || !FC_SEL.focus) return [];
+  const a = fcGridPos(g, FC_SEL.anchor), f = fcGridPos(g, FC_SEL.focus); if (!a || !f) return [];
+  const r1=Math.min(a.r,f.r), r2=Math.max(a.r,f.r), c1=Math.min(a.c,f.c), c2=Math.max(a.c,f.c);
+  const out=[]; for (let r=r1;r<=r2;r++){ const row=g[r]; if(!row) continue; for (let c=c1;c<=c2 && c<row.length;c++){ if (row[c]) out.push(row[c]); } }
+  return out;
+}
+function fcPaintSelection(){
+  const grid = document.querySelector('#fc-content .fc-detail-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.fc-cell-selected,.fc-cell-active').forEach(e => e.classList.remove('fc-cell-selected','fc-cell-active'));
+  const cells = fcSelectedCells();
+  if (!cells.length){ fcUpdateStatusBar(0,0,0); return; }
+  let sum=0, numCount=0;
+  cells.forEach(cell => { cell.classList.add('fc-cell-selected'); const v=parseFloat(cell.dataset.val); if (!isNaN(v) && Math.abs(v)>0){ sum+=v; numCount++; } });
+  const fc = fcFindCell(FC_SEL.focus); if (fc) fc.classList.add('fc-cell-active');
+  fcUpdateStatusBar(cells.length, sum, numCount);
+}
+function fcUpdateStatusBar(count, sum, numCount){
+  let bar = document.getElementById('fc-statusbar');
+  if (count <= 1){ if (bar) bar.style.display='none'; return; }
+  if (!bar){
+    bar = document.createElement('div'); bar.id='fc-statusbar';
+    bar.style.cssText = 'position:fixed;bottom:14px;right:18px;z-index:9998;background:#0f172a;color:#fff;padding:7px 14px;border-radius:8px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.28);font-variant-numeric:tabular-nums';
+    document.body.appendChild(bar);
+  }
+  const avg = numCount ? sum/numCount : 0;
+  bar.innerHTML = `<strong>Sum</strong> ${fmtUSD(sum)} &nbsp;·&nbsp; <strong>Avg</strong> ${fmtUSD(avg)} &nbsp;·&nbsp; <strong>Count</strong> ${numCount} of ${count}`;
+  bar.style.display='';
+}
+
+// ---- click / mousedown selection ----
+function fcCellMouseDown(e, td){
+  if (e.button !== 0) return;
+  if (e.shiftKey && FC_SEL.anchor){ FC_SEL.focus = fcCellCoords(td); }
+  else {
+    FC_SEL.anchor = FC_SEL.focus = fcCellCoords(td);
+    FC_DRAGGING = true;                                    // begin click-drag range select
+    document.addEventListener('mousemove', fcDragMove);
+    document.addEventListener('mouseup', fcDragEnd);
+  }
+  fcCloseMenu();
+  fcPaintSelection();
+}
+function fcDragMove(e){
+  if (!FC_DRAGGING) return;
+  const el = e.target && e.target.closest ? e.target.closest('td[data-fm]') : null;
+  if (!el) return;
+  const grid = el.closest('.fc-detail-grid');
+  if (!grid || !grid.closest('#fc-content')) return;
+  const nc = fcCellCoords(el), cur = FC_SEL.focus;
+  if (cur && cur.mk===nc.mk && cur.fm===nc.fm && (cur.verkey||'')===(nc.verkey||'')) return;  // same cell — skip
+  FC_SEL.focus = nc;
+  fcPaintSelection();                                      // repaints range + updates the live Sum/Avg/Count bar
+}
+function fcDragEnd(){
+  FC_DRAGGING = false;
+  document.removeEventListener('mousemove', fcDragMove);
+  document.removeEventListener('mouseup', fcDragEnd);
+}
+function fcCellClick(td){ FC_SEL.anchor = FC_SEL.focus = fcCellCoords(td); fcPaintSelection(); }
+
+// ---- context menu (right-click) ----
+function fcCellContextMenu(e, td){
+  e.preventDefault();
+  if (!td.classList.contains('fc-cell-selected')){ FC_SEL.anchor = FC_SEL.focus = fcCellCoords(td); fcPaintSelection(); }
+  fcCloseMenu();
+  const menu = document.createElement('div'); menu.id='fc-ctx-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:4px;font-size:13px;min-width:200px';
+  const items = [['Fill value across months →','fcFillAcross()'], ['Copy','fcCopySelection()'], ['Clear cell(s)','fcClearSelection()']];
+  menu.innerHTML = items.map(([lbl,fn]) => `<div onclick="fcCloseMenu();${fn}" style="padding:7px 12px;border-radius:5px;cursor:pointer" onmouseover="this.style.background='#eef2ff'" onmouseout="this.style.background=''">${lbl}</div>`).join('');
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(e.clientX, window.innerWidth-215)+'px';
+  menu.style.top = Math.min(e.clientY, window.innerHeight-150)+'px';
+  setTimeout(() => document.addEventListener('mousedown', fcCloseMenu, {once:true}), 0);
+}
+function fcCloseMenu(){ const m=document.getElementById('fc-ctx-menu'); if (m) m.remove(); }
+
+// ---- edit a single cell (text input; supports initial char / keep value) ----
+function fcCellEdit(td, opts){
+  opts = opts || {};
+  if (!td || td.querySelector('input')) return;
+  if (!td.classList.contains('fc-cell-display')) return;
+  FC_SEL.anchor = FC_SEL.focus = fcCellCoords(td); fcPaintSelection();
+  const fm = +td.dataset.fm, mk = td.dataset.mk, src = td.dataset.source, verKey = td.dataset.verkey || STATE.fcVersion;
+  const curV = parseFloat(td.dataset.val); const currentVal = isNaN(curV) ? 0 : curV;
+  td.classList.remove('fc-cell-display'); td.classList.add('fc-cell-edit');
   const inp = document.createElement('input');
-  inp.type = 'number';
-  inp.step = '1';
-  inp.value = currentVal === 0 ? '' : currentVal;
-  td.textContent = '';
-  td.appendChild(inp);
-  inp.focus();
-  inp.select();
-
-  const save = () => fcCellSave(td, fm, mk, src, inp.value, verKey);
-  inp.addEventListener('blur', save);
+  inp.type='text'; inp.className='fc-cell-input'; inp.setAttribute('inputmode','decimal'); inp.autocomplete='off'; inp.spellcheck=false;
+  inp.value = opts.initial!=null ? opts.initial : (currentVal===0 ? '' : String(currentVal));
+  td.textContent=''; td.appendChild(inp); inp.focus();
+  if (opts.initial!=null || opts.keep){ const l=inp.value.length; try{ inp.setSelectionRange(l,l); }catch(e){} } else inp.select();
+  let done=false;
+  const finish = (move) => {
+    if (done) return true;
+    const p = fcParseCellInput(inp.value);
+    if (!p.ok){ inp.style.background='#fee2e2'; inp.title='Invalid — enter a number or a formula like =1200+300'; return false; }
+    done=true; inp.removeEventListener('blur', onBlur);
+    let pend = fcCellCoords(td);
+    if (move){ const n = fcNeighbor(td, move); if (n) pend = fcCellCoords(n); }
+    FC_PENDING_SEL = { anchor:pend, focus:pend };
+    fcCellSave(td, fm, mk, src, p.value, verKey);
+    return true;
+  };
+  const cancel = () => { if (done) return; done=true; inp.removeEventListener('blur', onBlur); FC_PENDING_SEL = { anchor:fcCellCoords(td), focus:fcCellCoords(td) }; renderForecastPane(); };
+  const onBlur = () => { if (done) return; const p=fcParseCellInput(inp.value); if (!p.ok){ cancel(); return; } finish(null); };
+  inp.addEventListener('blur', onBlur);
   inp.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter'){ ev.preventDefault(); inp.removeEventListener('blur', save); fcCellSave(td, fm, mk, src, inp.value, verKey); }
-    if (ev.key === 'Escape'){ ev.preventDefault(); inp.removeEventListener('blur', save); renderForecastPane(); }
+    if (ev.key==='Enter'){ ev.preventDefault(); finish(ev.shiftKey?'up':'down'); }
+    else if (ev.key==='Tab'){ ev.preventDefault(); finish(ev.shiftKey?'left':'right'); }
+    else if (ev.key==='Escape'){ ev.preventDefault(); cancel(); }
+    else if (ev.key==='ArrowUp'){ ev.preventDefault(); finish('up'); }
+    else if (ev.key==='ArrowDown'){ ev.preventDefault(); finish('down'); }
+    ev.stopPropagation();
   });
 }
 
-function fcCellSave(td, fmIdx, mk, source, rawVal, verKey){
-  const val = rawVal === '' || rawVal === null ? 0 : +rawVal;
+// ---- write helpers (single + batch), all funneled through one override mutator ----
+function _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey){
   verKey = verKey || STATE.fcVersion;
   const src = source || (STATE.fcSubTab === 'cl' ? 'CONTRACT_LABOR' : 'PLANNING_GENERAL');
-  const o = loadOverrides();
   const k = overrideKey(ACTIVE_SLUG, verKey, src);
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
-
-  const addedIdx = (o[k].added||[]).findIndex(a =>
-    matchKey(Object.assign({source:src}, a)) === mk
-  );
+  const addedIdx = (o[k].added||[]).findIndex(a => matchKey(Object.assign({source:src}, a)) === mk);
   if (addedIdx >= 0){
     if (!o[k].added[addedIdx].cellEdits) o[k].added[addedIdx].cellEdits = {};
     if (val === 0) delete o[k].added[addedIdx].cellEdits[String(fmIdx)];
@@ -5010,8 +5185,252 @@ function fcCellSave(td, fmIdx, mk, source, rawVal, verKey){
     if (val === 0) delete o[k].edited[mk].cellEdits[String(fmIdx)];
     else o[k].edited[mk].cellEdits[String(fmIdx)] = val;
   }
+}
+function fcCellSave(td, fmIdx, mk, source, rawVal, verKey){
+  const val = rawVal === '' || rawVal === null ? 0 : +rawVal;
+  fcPushUndo();
+  const o = loadOverrides();
+  _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey);
   saveOverrides(o);
   renderForecastPane();
+}
+function fcBatchSave(list){
+  if (!list || !list.length) return;
+  fcPushUndo();
+  const o = loadOverrides();
+  list.forEach(e => _fcApplyEditToOverrides(o, e.mk, e.fm, e.source, e.value, e.verkey));
+  saveOverrides(o);
+  renderForecastPane();
+}
+
+// ---- undo / redo (snapshots the whole overrides object) ----
+function fcPushUndo(){ try { FC_UNDO.push(JSON.stringify(loadOverrides())); if (FC_UNDO.length>100) FC_UNDO.shift(); FC_REDO=[]; } catch(e){} }
+function fcUndo(){ if (!FC_UNDO.length) return; try { FC_REDO.push(JSON.stringify(loadOverrides())); saveOverrides(JSON.parse(FC_UNDO.pop())); renderForecastPane(); } catch(e){} }
+function fcRedo(){ if (!FC_REDO.length) return; try { FC_UNDO.push(JSON.stringify(loadOverrides())); saveOverrides(JSON.parse(FC_REDO.pop())); renderForecastPane(); } catch(e){} }
+
+// ---- clear / copy / fill ----
+function fcClearSelection(){
+  const cells = fcSelectedCells().filter(td => td.classList.contains('fc-cell-display'));
+  if (!cells.length) return;
+  const list = cells.map(td => ({ mk:td.dataset.mk, fm:+td.dataset.fm, source:td.dataset.source, verkey:td.dataset.verkey, value:0 }));
+  FC_PENDING_SEL = { anchor:FC_SEL.anchor, focus:FC_SEL.focus };
+  fcBatchSave(list);
+}
+function fcCopySelection(){
+  const g = fcCellGrid(); const a=fcGridPos(g,FC_SEL.anchor), f=fcGridPos(g,FC_SEL.focus); if (!a||!f) return;
+  const r1=Math.min(a.r,f.r), r2=Math.max(a.r,f.r), c1=Math.min(a.c,f.c), c2=Math.max(a.c,f.c);
+  const matrix=[]; const tsv=[]; let n=0;
+  for (let r=r1;r<=r2;r++){ const row=g[r]; if (!row) continue; const mrow=[], trow=[];
+    for (let c=c1;c<=c2 && c<row.length;c++){ const v=parseFloat(row[c].dataset.val); const num=isNaN(v)?0:v; mrow.push(num); trow.push(num===0?'':String(num)); n++; }
+    matrix.push(mrow); tsv.push(trow.join('\t'));
+  }
+  FC_CLIP = matrix;                                              // internal buffer — the reliable source for in-grid paste
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv.join('\n')).catch(()=>{});  // also to OS clipboard for Excel interop
+  const grid=document.querySelector('#fc-content .fc-detail-grid');
+  if (grid){ grid.querySelectorAll('.fc-cell-copied').forEach(e=>e.classList.remove('fc-cell-copied')); fcSelectedCells().forEach(td=>td.classList.add('fc-cell-copied')); }
+  fcToast('Copied '+n+' cell'+(n===1?'':'s')+' — select a target cell and press Ctrl+V');
+}
+// Paste a 2D array of values, anchored at the top-left of the current selection. Shared by
+// the OS-clipboard paste path (Excel) and the internal FC_CLIP path (in-grid copy/paste).
+function _fcPasteMatrix(matrix){
+  if (!matrix || !matrix.length) return;
+  const g = fcCellGrid();
+  const a=fcGridPos(g,FC_SEL.anchor||FC_SEL.focus), f=fcGridPos(g,FC_SEL.focus||FC_SEL.anchor); if (!a||!f) return;
+  const r1=Math.min(a.r,f.r), r2=Math.max(a.r,f.r), c1=Math.min(a.c,f.c), c2=Math.max(a.c,f.c);
+  const mRows = matrix.length, mCols = Math.max.apply(null, matrix.map(r => r.length));
+  const single = (mRows===1 && mCols===1);              // one value → fill the whole selection (Excel-style)
+  const rEnd = single ? r2 : r1 + mRows - 1;
+  const cEnd = single ? c2 : c1 + mCols - 1;
+  const list=[]; let lastR=r1, lastC=c1;
+  for (let r=r1; r<=rEnd; r++){
+    const row = g[r]; if (!row) continue;
+    for (let c=c1; c<=cEnd; c++){
+      const cell = row[c]; if (!cell || !cell.classList.contains('fc-cell-display')) continue;
+      const raw = single ? matrix[0][0] : (matrix[r-r1] ? matrix[r-r1][c-c1] : undefined);
+      if (raw===undefined) continue;
+      const p = fcParseCellInput(raw); if (!p.ok) continue;
+      list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:p.value });
+      lastR=r; lastC=c;
+    }
+  }
+  if (!list.length) return;
+  const startCell = g[r1] && g[r1][c1]; const endCell = g[lastR] && g[lastR][lastC];
+  FC_PENDING_SEL = { anchor: startCell?fcCellCoords(startCell):FC_SEL.anchor, focus: endCell?fcCellCoords(endCell):FC_SEL.focus };
+  fcBatchSave(list);
+}
+function fcToast(msg){
+  let t=document.getElementById('fc-toast');
+  if (!t){ t=document.createElement('div'); t.id='fc-toast'; t.style.cssText='position:fixed;bottom:56px;right:18px;z-index:9998;background:#0f172a;color:#fff;padding:7px 14px;border-radius:8px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.28);transition:opacity .3s'; document.body.appendChild(t); }
+  t.textContent=msg; t.style.display=''; t.style.opacity='1';
+  if (_fcToastTimer) clearTimeout(_fcToastTimer);
+  _fcToastTimer=setTimeout(()=>{ t.style.opacity='0'; }, 1800);
+}
+function fcFillAcross(){
+  const g = fcCellGrid(); const a=fcGridPos(g,FC_SEL.anchor||FC_SEL.focus), f=fcGridPos(g,FC_SEL.focus||FC_SEL.anchor); if (!a||!f) return;
+  const r=Math.min(a.r,f.r), c=Math.min(a.c,f.c);
+  const row=g[r]; if (!row) return;
+  const v = parseFloat(row[c].dataset.val) || 0;
+  const list=[];
+  for (let j=c;j<row.length;j++){ const cell=row[j]; if (!cell.classList.contains('fc-cell-display')) continue; list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:v }); }
+  if (!list.length) return;
+  FC_PENDING_SEL = { anchor:FC_SEL.anchor, focus:FC_SEL.focus };
+  fcBatchSave(list);
+}
+
+// ---- global key + paste handlers (bound once) ----
+function fcBindKeys(){
+  if (FC_KEYS_BOUND) return; FC_KEYS_BOUND = true;
+  document.addEventListener('keydown', fcGridKeydown);
+  document.addEventListener('paste', fcGridPaste);
+}
+function fcGridKeydown(e){
+  const grid = document.querySelector('#fc-content .fc-detail-grid');
+  if (!grid) return;
+  if (grid.querySelector('td.fc-cell-edit input')) return;   // an input handles its own keys
+  const ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return;
+  const k = e.key;
+  if ((e.ctrlKey||e.metaKey) && !e.shiftKey && (k==='z'||k==='Z')){ e.preventDefault(); fcUndo(); return; }
+  if ((e.ctrlKey||e.metaKey) && ((k==='y'||k==='Y') || (e.shiftKey && (k==='z'||k==='Z')))){ e.preventDefault(); fcRedo(); return; }
+  const cur = FC_SEL.focus ? fcFindCell(FC_SEL.focus) : null;
+  if (!cur) return;
+  if (k.indexOf('Arrow')===0){
+    e.preventDefault();
+    const n = fcNeighbor(cur, {ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[k]); if (!n) return;
+    const nc = fcCellCoords(n);
+    if (e.shiftKey) FC_SEL.focus = nc; else { FC_SEL.anchor = FC_SEL.focus = nc; }
+    fcPaintSelection(); n.scrollIntoView({block:'nearest', inline:'nearest'});
+    return;
+  }
+  if (k==='Tab'){ e.preventDefault(); const n=fcNeighbor(cur, e.shiftKey?'left':'right'); if (n){ FC_SEL.anchor=FC_SEL.focus=fcCellCoords(n); fcPaintSelection(); n.scrollIntoView({block:'nearest',inline:'nearest'}); } return; }
+  if (k==='Enter'){ e.preventDefault(); const n=fcNeighbor(cur, e.shiftKey?'up':'down'); if (n){ FC_SEL.anchor=FC_SEL.focus=fcCellCoords(n); fcPaintSelection(); n.scrollIntoView({block:'nearest',inline:'nearest'}); } return; }
+  if (k==='F2'){ e.preventDefault(); if (cur.classList.contains('fc-cell-display')) fcCellEdit(cur, {keep:true}); return; }
+  if (k==='Delete' || k==='Backspace'){ e.preventDefault(); fcClearSelection(); return; }
+  if ((e.ctrlKey||e.metaKey) && (k==='c'||k==='C')){ e.preventDefault(); fcCopySelection(); return; }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length===1 && /[-+=0-9.]/.test(k)){
+    if (cur.classList.contains('fc-cell-display')){ e.preventDefault(); fcCellEdit(cur, {initial:k}); }
+    return;
+  }
+}
+function fcGridPaste(e){
+  const grid = document.querySelector('#fc-content .fc-detail-grid');
+  if (!grid) return;
+  if (grid.querySelector('td.fc-cell-edit input')) return;
+  const ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return;
+  if (!FC_SEL.anchor || !FC_SEL.focus) return;
+  const cd = e.clipboardData || window.clipboardData;
+  const text = cd ? cd.getData('text') : '';
+  e.preventDefault();
+  let matrix = null;
+  if (text && text.trim() !== ''){                              // clipboard has content (Excel or another app) — use it
+    matrix = text.replace(/\r/g,'').replace(/\n+$/,'').split('\n').map(r => r.split('\t'));
+  } else if (FC_CLIP){                                          // nothing on the OS clipboard — fall back to the in-grid copy
+    matrix = FC_CLIP;
+  }
+  _fcPasteMatrix(matrix);
+}
+
+// ---- run after every editable-grid render: rebind + restore selection ----
+function fcAfterGridRender(){
+  fcBindKeys();
+  fcApplyColWidths();
+  if (FC_PENDING_SEL){
+    const p = FC_PENDING_SEL; FC_PENDING_SEL = null;
+    FC_SEL.anchor = p.anchor || p.focus || null;
+    FC_SEL.focus  = p.focus  || p.anchor || null;
+    fcPaintSelection();
+    const fc = fcFindCell(FC_SEL.focus); if (fc) fc.scrollIntoView({block:'nearest', inline:'nearest'});
+  } else if (FC_SEL.focus && fcFindCell(FC_SEL.focus)){
+    fcPaintSelection();
+  } else {
+    fcUpdateStatusBar(0,0,0);
+  }
+}
+
+// ---- resizable, persistent column widths (saved per browser) ----
+function fcColResizerHtml(ck){ return `<span class="fc-col-resizer" onmousedown="fcColResizeStart(event,'${ck}')" ondblclick="fcColResizeReset(event,'${ck}')" title="Drag to resize · double-click to reset to auto"></span>`; }
+function fcLoadColWidths(){ try { return JSON.parse(localStorage.getItem(FC_COLW_KEY)) || {}; } catch(e){ return {}; } }
+function fcSaveColWidths(){ try { localStorage.setItem(FC_COLW_KEY, JSON.stringify(FC_COLW||{})); } catch(e){} }
+function fcApplyColWidths(){
+  if (!FC_COLW) FC_COLW = fcLoadColWidths();
+  const w = FC_COLW, S = '#fc-content .fc-detail-grid', rules = [];
+  if (w.desc){
+    rules.push(`${S} td.fc-desc-cell, ${S} th:nth-child(1){width:${w.desc}px;min-width:${w.desc}px;max-width:${w.desc}px}`);
+    rules.push(`${S} td.fc-desc-cell .fc-desc-text{white-space:normal;overflow:visible;word-break:break-word}`);  // show full text at custom width
+  }
+  if (w.acct)  rules.push(`${S} td:nth-child(2), ${S} th:nth-child(2){width:${w.acct}px;min-width:${w.acct}px;max-width:${w.acct}px}`);
+  if (w.cat)   rules.push(`${S} td:nth-child(4), ${S} th:nth-child(4){width:${w.cat}px;min-width:${w.cat}px;max-width:${w.cat}px}`);
+  if (w.month) rules.push(`${S} td[data-fm], ${S} th.fc-month-h{width:${w.month}px;min-width:${w.month}px;max-width:${w.month}px}`);
+  let el = document.getElementById('fc-colwidths-style');
+  if (!el){ el = document.createElement('style'); el.id='fc-colwidths-style'; document.head.appendChild(el); }
+  el.textContent = rules.join('\n');
+}
+function fcColResizeStart(e, ck){
+  e.preventDefault(); e.stopPropagation();
+  if (!FC_COLW) FC_COLW = fcLoadColWidths();
+  const S = '#fc-content .fc-detail-grid';
+  const sel = { desc:`${S} th:nth-child(1)`, acct:`${S} th:nth-child(2)`, cat:`${S} th:nth-child(4)`, month:`${S} th.fc-month-h` }[ck];
+  const thEl = sel ? document.querySelector(sel) : null;
+  const startW = thEl ? Math.round(thEl.getBoundingClientRect().width) : 100;
+  _fcColResize = { ck, startX:e.clientX, startW };
+  document.addEventListener('mousemove', fcColResizeMove);
+  document.addEventListener('mouseup', fcColResizeEnd);
+  document.body.style.cursor = 'col-resize';
+}
+function fcColResizeMove(e){
+  if (!_fcColResize) return;
+  let w = Math.round(_fcColResize.startW + (e.clientX - _fcColResize.startX));
+  w = Math.max(40, Math.min(900, w));
+  FC_COLW[_fcColResize.ck] = w;
+  fcApplyColWidths();
+}
+function fcColResizeEnd(){
+  if (!_fcColResize) return;
+  _fcColResize = null;
+  document.removeEventListener('mousemove', fcColResizeMove);
+  document.removeEventListener('mouseup', fcColResizeEnd);
+  document.body.style.cursor = '';
+  fcSaveColWidths();     // persist to localStorage
+}
+function fcColResizeReset(e, ck){
+  e.preventDefault(); e.stopPropagation();
+  if (!FC_COLW) FC_COLW = fcLoadColWidths();
+  if (FC_COLW[ck] != null){ delete FC_COLW[ck]; fcApplyColWidths(); fcSaveColWidths(); }
+}
+function fcResetAllColWidths(){ FC_COLW = {}; fcApplyColWidths(); fcSaveColWidths(); fcToast('Column widths reset'); }
+
+// ---- keyboard cheat-sheet overlay ----
+function fcShowKeyHelp(){
+  let el = document.getElementById('fc-key-help');
+  if (el){ el.remove(); return; }
+  const rows = [
+    ['Arrow keys','Move between cells'],
+    ['Shift + Arrows','Select a range'],
+    ['Click / Shift-Click','Select cell / extend selection'],
+    ['Type a number','Start editing (overwrites the cell)'],
+    ['F2','Edit, keeping the current value'],
+    ['Enter / Shift+Enter','Commit &amp; move down / up'],
+    ['Tab / Shift+Tab','Commit &amp; move right / left'],
+    ['Esc','Cancel the current edit'],
+    ['Formulas','=1200+300, 9000/12, 450*1.1 &nbsp;(+ - * / and parentheses)'],
+    ['Shorthand','1.2k → 1,200 &nbsp;·&nbsp; 3m → 3,000,000'],
+    ['Ctrl+C / Ctrl+V','Copy / paste cells — within the grid (row-to-row) or to/from Excel'],
+    ['Delete / Backspace','Clear the selected cell(s)'],
+    ['Right-click','Fill across months · Copy · Clear'],
+    ['Ctrl+Z / Ctrl+Y','Undo / redo'],
+    ['Resize columns','Drag a column-header edge · double-click it to reset · widths save in your browser'],
+  ];
+  el = document.createElement('div'); el.id='fc-key-help';
+  el.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center';
+  el.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:560px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);font-size:13px;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#0f172a;color:#fff;font-weight:600">Forecast keyboard shortcuts
+      <span onclick="document.getElementById('fc-key-help').remove()" style="cursor:pointer;font-size:18px;line-height:1">&times;</span></div>
+    <table style="width:100%;border-collapse:collapse">${rows.map(([k,d],idx)=>`<tr style="background:${idx%2?'#f8fafc':'#fff'}"><td style="padding:8px 18px;white-space:nowrap;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9">${k}</td><td style="padding:8px 18px;color:#334155;border-bottom:1px solid #f1f5f9">${d}</td></tr>`).join('')}</table>
+    <div style="padding:10px 18px;color:#64748b;font-size:11px">Tip: paste a whole column from Excel — select the top cell first, then Ctrl+V.</div>
+  </div>`;
+  el.addEventListener('mousedown', ev => { if (ev.target===el) el.remove(); });
+  document.body.appendChild(el);
 }
 
 // ---- Per-line prepaid spread popover ----
@@ -5298,6 +5717,24 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   const edited = ov1.edited || {};
   const added = ov1.added || [];
 
+  // Overlay cell-level edits directly onto the grouped monthly arrays. applyOverrides() can only
+  // attach a cellEdit to a month that already has an underlying source record, so an edit/paste
+  // into a month that was blank in the base data (e.g. the empty months on a prepaid or
+  // partial-year line) had nothing to land on and vanished. Re-applying here — per FY, since
+  // overrides are keyed by version+FY — guarantees an edit to ANY month renders.
+  fys.forEach(fy => {
+    const sec = getOverrideSection(slug, versionName + ' | FY' + fy, primarySrc);
+    const ed = sec.edited || {};
+    const ad = sec.added || [];
+    Object.values(lineMap).forEach(line => {
+      let ce = ed[line.mk] && ed[line.mk].cellEdits;
+      if (!ce){ const arec = ad.find(a => matchKey(Object.assign({source: primarySrc}, a)) === line.mk); ce = arec && arec.cellEdits; }
+      if (!ce) return;
+      if (!line.perFy[fy]) line.perFy[fy] = new Array(12).fill(0);
+      Object.keys(ce).forEach(k => { const i = +k; if (i >= 0 && i < 12) line.perFy[fy][i] = ce[k]; });
+    });
+  });
+
   const lines = Object.values(lineMap).map(line => {
     let total = 0;
     fys.forEach(fy => (line.perFy[fy]||[]).forEach(v => total += v));
@@ -5316,9 +5753,9 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   const html = [];
   html.push(`<table class="bva fc-detail-grid${FORECAST_STATE.descWide ? ' fc-desc-wide' : ''}"><thead>
     <tr class="group-row">
-      <th>Description</th><th>Account</th><th>Co</th><th>Category</th>
+      <th>Description${fcColResizerHtml('desc')}</th><th>Account${fcColResizerHtml('acct')}</th><th>Co</th><th>Category${fcColResizerHtml('cat')}</th>
       <th title="Expense or Prepaid">Type</th><th title="Active months">Mo</th>
-      ${monthCols.map(h => `<th class="section-val fc-month-h">${h}</th>`).join('')}
+      ${monthCols.map(h => `<th class="section-val fc-month-h">${h}${fcColResizerHtml('month')}</th>`).join('')}
       ${fyTotalHdrs.map(h => `<th class="section-val">${h}</th>`).join('')}
       ${grandTotalHdr}<th></th>
     </tr>
@@ -5370,9 +5807,9 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       cellsHtml += mo.map((v, i) => {
         const overridden = String(i) in cellEdits;
         const cls = (canEdit ? 'num fc-cell-display' : 'num fc-cell-readonly') + (overridden ? ' fc-cell-overridden' : '');
-        const click = canEdit ? `onclick="fcCellEdit(this)"` : '';
+        const click = canEdit ? `onmousedown="fcCellMouseDown(event,this)" ondblclick="fcCellEdit(this)" oncontextmenu="fcCellContextMenu(event,this)"` : '';
         return `<td class="${cls}" data-fm="${i}" data-mk="${mk.replace(/"/g,'&quot;')}"
-                data-source="${primarySrc}" data-verkey="${verKey.replace(/"/g,'&quot;')}"
+                data-source="${primarySrc}" data-verkey="${verKey.replace(/"/g,'&quot;')}" data-val="${v}"
                 ${click}>${fmtUSD(v)}</td>`;
       }).join('');
       const ft = mo.reduce((s,v)=>s+v,0);
@@ -5475,7 +5912,11 @@ function renderForecastPane(){
        <button class="btn-sm${FORECAST_STATE.descWide ? ' fc-toggle-on' : ''}" id="fc-desc-wide-btn" onclick="toggleFcDescWide()" title="Widen the Description column so long descriptions show in full">${FORECAST_STATE.descWide ? '↔ Wide descriptions: On' : '↔ Wide descriptions'}</button>
        <button class="btn-sm" onclick="exportPlanningGeneralCsv()">Export to Adaptive (CSV)</button>
        ${canEdit ? '<button class="btn-sm" onclick="exportOverrides()">Save Overrides</button>' : ''}
-       ${canEdit ? '<button class="btn-sm" onclick="importOverrides()">Load Overrides</button>' : ''}`
+       ${canEdit ? '<button class="btn-sm" onclick="importOverrides()">Load Overrides</button>' : ''}
+       ${canEdit ? '<button class="btn-sm" onclick="fcUndo()" title="Undo last edit (Ctrl+Z)">↶ Undo</button>' : ''}
+       ${canEdit ? '<button class="btn-sm" onclick="fcRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>' : ''}
+       <button class="btn-sm" onclick="fcResetAllColWidths()" title="Reset any custom column widths back to automatic">⇔ Reset columns</button>
+       <button class="btn-sm" onclick="fcShowKeyHelp()" title="Keyboard &amp; spreadsheet shortcuts">⌨ Shortcuts</button>`
     : '';
   const banner = isEditor
     ? (canEdit
@@ -5638,6 +6079,7 @@ function renderForecastPane(){
       <div class="bva-wrap">${editorHtml}</div>
     </div>`;
   wireFcFilterBar();
+  fcAfterGridRender();
 }
 
 // ---- Travel Redesign ----
