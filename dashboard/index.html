@@ -5174,16 +5174,18 @@ function _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey){
   const k = overrideKey(ACTIVE_SLUG, verKey, src);
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
   const addedIdx = (o[k].added||[]).findIndex(a => matchKey(Object.assign({source:src}, a)) === mk);
+  // Store the value explicitly — including 0. A 0 is a *forced blank* (the user cleared/zeroed the
+  // cell), NOT a signal to drop the override and snap back to the base data value. (Deleting on 0
+  // is why Delete/typing-0 appeared to do nothing on cells that had an underlying budget value.)
+  // Undo (Ctrl+Z) reverts a clear.
   if (addedIdx >= 0){
     if (!o[k].added[addedIdx].cellEdits) o[k].added[addedIdx].cellEdits = {};
-    if (val === 0) delete o[k].added[addedIdx].cellEdits[String(fmIdx)];
-    else o[k].added[addedIdx].cellEdits[String(fmIdx)] = val;
+    o[k].added[addedIdx].cellEdits[String(fmIdx)] = val;
   } else {
     if (!o[k].edited[mk]) o[k].edited[mk] = { spreads:[], cellEdits:{} };
     if (!o[k].edited[mk].cellEdits) o[k].edited[mk].cellEdits = {};
     if (!o[k].edited[mk].spreads) o[k].edited[mk].spreads = [];
-    if (val === 0) delete o[k].edited[mk].cellEdits[String(fmIdx)];
-    else o[k].edited[mk].cellEdits[String(fmIdx)] = val;
+    o[k].edited[mk].cellEdits[String(fmIdx)] = val;
   }
 }
 function fcCellSave(td, fmIdx, mk, source, rawVal, verKey){
@@ -5210,7 +5212,9 @@ function fcRedo(){ if (!FC_REDO.length) return; try { FC_UNDO.push(JSON.stringif
 
 // ---- clear / copy / fill ----
 function fcClearSelection(){
-  const cells = fcSelectedCells().filter(td => td.classList.contains('fc-cell-display'));
+  // Force every editable cell in the selection to 0. Skip cells already showing 0 so we don't
+  // stamp a spurious "overridden" marker on blank cells.
+  const cells = fcSelectedCells().filter(td => td.classList.contains('fc-cell-display') && (parseFloat(td.dataset.val)||0) !== 0);
   if (!cells.length) return;
   const list = cells.map(td => ({ mk:td.dataset.mk, fm:+td.dataset.fm, source:td.dataset.source, verkey:td.dataset.verkey, value:0 }));
   FC_PENDING_SEL = { anchor:FC_SEL.anchor, focus:FC_SEL.focus };
