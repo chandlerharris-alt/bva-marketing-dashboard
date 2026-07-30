@@ -344,6 +344,16 @@ tr:hover .fc-del-icon{opacity:1}
 .fc-detail-grid th.fc-month-h{font-size:9.5px; padding-left:4px; padding-right:4px}
 .fc-detail-grid td.num{padding-left:4px; padding-right:4px; font-size:11.5px}
 .fc-detail-grid .fc-bva-line{display:table-row}
+/* Description cell: text truncates but tags stay visible (compact default) */
+.fc-detail-grid td.fc-desc-cell{max-width:260px; vertical-align:top}
+.fc-desc-inner{display:flex; align-items:center; gap:5px; min-width:0}
+.fc-desc-inner .fc-desc-text{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1 1 auto; color:var(--navy)}
+.fc-desc-inner .fc-desc-tags{flex:0 0 auto; white-space:nowrap; display:inline-flex; align-items:center; gap:4px}
+/* Wide mode: reveal full descriptions (toggled via toolbar button) */
+.fc-detail-grid.fc-desc-wide td.fc-desc-cell{max-width:560px}
+.fc-detail-grid.fc-desc-wide .fc-desc-inner{align-items:flex-start}
+.fc-detail-grid.fc-desc-wide .fc-desc-text{overflow:visible; white-space:normal; word-break:break-word}
+.btn-sm.fc-toggle-on{background:var(--navy); color:#fff; border-color:var(--navy)}
 .fc-src-tag{display:inline-block; padding:0 5px; border-radius:8px; font-size:9px; font-weight:700; letter-spacing:.3px; vertical-align:middle; margin-right:4px}
 .fc-src-tag.pg{background:#dbeafe; color:#1e40af}
 .fc-src-tag.cl{background:#dcfce7; color:#166534}
@@ -1294,7 +1304,7 @@ const STATE = {
   reclassMode:'before',     // 'before' | 'after' — restate financials with suggested reclasses applied
 };
 
-let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary' };
+let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary', descWide: false };
 // This set was inherited from the Logistics/Warehousing dashboard this app was cloned from --
 // most of these codes (freight/returns-center/COGS accounts) are irrelevant here since this
 // deployment only ever renders the marketing/media manifest tabs, but 7855000/7855000C (Contract
@@ -5304,7 +5314,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   const grandTotalHdr = fys.length > 1 ? `<th class="section-val">Total</th>` : '';
 
   const html = [];
-  html.push(`<table class="bva fc-detail-grid"><thead>
+  html.push(`<table class="bva fc-detail-grid${FORECAST_STATE.descWide ? ' fc-desc-wide' : ''}"><thead>
     <tr class="group-row">
       <th>Description</th><th>Account</th><th>Co</th><th>Category</th>
       <th title="Expense or Prepaid">Type</th><th title="Active months">Mo</th>
@@ -5377,12 +5387,15 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       : '<span class="fc-type-badge expense">Expense</span>';
 
     const descFull = line.desc || '';
-    const descShort = descFull.length > 35 ? descFull.slice(0,35) + '…' : descFull;
-    const descEscAttr = descFull.replace(/"/g,'&quot;').replace(/</g,'&lt;');
-    const descEditAttr = canEdit ? ` ondblclick="fcEditDesc(this,'${mkEsc}','${primarySrc}')" style="cursor:text;color:var(--navy);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"` : ' style="color:var(--navy);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"';
+    const descTitleAttr = descFull.replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    const descTextEsc = descFull.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const descTextHtml = descFull
+      ? `<span class="fc-desc-text">${descTextEsc}</span>`
+      : '<span class="fc-desc-text"><em style="color:var(--gray)">(blank)</em></span>';
+    const descEditHook = canEdit ? ` ondblclick="fcEditDesc(this,'${mkEsc}','${primarySrc}')" style="cursor:text"` : '';
     const coDisplay = line.co ? line.co : '';
     html.push(`<tr class="fc-bva-line bva other-row" data-mk="${mk.replace(/"/g,'&quot;')}">
-      <td title="${descEscAttr}"${descEditAttr}>${descShort || '<em style="color:var(--gray)">(blank)</em>'}${ucChipHtml(ACTIVE_SLUG, line.desc, line.acct)}${chipsBlock}</td>
+      <td class="fc-desc-cell" title="${descTitleAttr}"${descEditHook}><div class="fc-desc-inner">${descTextHtml}<span class="fc-desc-tags">${ucChipHtml(ACTIVE_SLUG, line.desc, line.acct)}</span></div>${chipsBlock}</td>
       <td style="color:var(--gray);font-size:11px">${acctDisplay}</td>
       <td style="color:var(--gray);font-size:11px;text-align:center">${coDisplay}</td>
       <td style="color:var(--gray);font-size:11px">${cat}</td>
@@ -5404,6 +5417,18 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   html.push(`<tr class="subtotal"><td colspan="6">Total · ${lines.length} lines</td>${gCells}${gFy}${gGrand}<td></td></tr>`);
   html.push(`</tbody></table>`);
   return html.join('');
+}
+
+function toggleFcDescWide(){
+  FORECAST_STATE.descWide = !FORECAST_STATE.descWide;
+  // Toggle live on the current grid so we don't lose any in-progress edit state.
+  const tbl = document.querySelector('#fc-content .fc-detail-grid');
+  if (tbl) tbl.classList.toggle('fc-desc-wide', FORECAST_STATE.descWide);
+  const btn = document.getElementById('fc-desc-wide-btn');
+  if (btn){
+    btn.classList.toggle('fc-toggle-on', FORECAST_STATE.descWide);
+    btn.textContent = FORECAST_STATE.descWide ? '↔ Wide descriptions: On' : '↔ Wide descriptions';
+  }
 }
 
 function renderForecastPane(){
@@ -5447,6 +5472,7 @@ function renderForecastPane(){
 
   const actionBtns = isEditor
     ? `${canEdit ? '<button class="btn-sm btn-primary" onclick="openFcRowModalSimple()">+ Add Line</button>' : ''}
+       <button class="btn-sm${FORECAST_STATE.descWide ? ' fc-toggle-on' : ''}" id="fc-desc-wide-btn" onclick="toggleFcDescWide()" title="Widen the Description column so long descriptions show in full">${FORECAST_STATE.descWide ? '↔ Wide descriptions: On' : '↔ Wide descriptions'}</button>
        <button class="btn-sm" onclick="exportPlanningGeneralCsv()">Export to Adaptive (CSV)</button>
        ${canEdit ? '<button class="btn-sm" onclick="exportOverrides()">Save Overrides</button>' : ''}
        ${canEdit ? '<button class="btn-sm" onclick="importOverrides()">Load Overrides</button>' : ''}`
