@@ -67,6 +67,22 @@ body{font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helv
 .pill-group button{border:none; background:#fff; padding:6px 15px; cursor:pointer; font-size:12px; border-right:1px solid var(--border); color:var(--navy)}
 .pill-group button:last-child{border-right:none}
 .pill-group button.active{background:var(--navy); color:#fff}
+/* Primary view tabs (Financial Performance / Forecast) — underline-style tabs, a distinct color each */
+.pill-group.vm-primary{border:none; gap:6px; border-radius:0; overflow:visible; border-bottom:2px solid var(--border); align-items:flex-end}
+.pill-group.vm-primary button{font-size:16px; font-weight:600; padding:10px 22px 8px; border:1px solid transparent; border-bottom:3px solid transparent; border-radius:7px 7px 0 0; background:transparent; color:var(--gray); cursor:pointer; letter-spacing:.2px; margin-bottom:-2px; transition:all .12s}
+.pill-group.vm-primary button:hover{color:var(--navy); background:rgba(0,0,0,.03)}
+/* selected = light gradient box + darker accent border at the bottom, a distinct color each */
+#bva-fc-toggle button[data-vm="bva"].active{color:#005856; font-weight:700; background:linear-gradient(180deg,#f2fbfa,#dbf0ee); border-color:#b9dedb; border-bottom-color:#005856}
+#bva-fc-toggle button[data-vm="forecast"].active{color:#B45309; font-weight:700; background:linear-gradient(180deg,#fffaf0,#fdeecb); border-color:#f5d9a8; border-bottom-color:#B45309}
+/* Forecast sub-tabs — same tab look, amber accent so they read as an extension of the Forecast tab */
+.pill-group.vm-subtabs{border:none; gap:5px; border-radius:0; overflow:visible; border-bottom:2px solid var(--border); align-items:flex-end}
+.pill-group.vm-subtabs button{font-size:13px; font-weight:600; padding:7px 16px 6px; border:1px solid transparent; border-bottom:3px solid transparent; border-radius:6px 6px 0 0; background:transparent; color:var(--gray); cursor:pointer; margin-bottom:-2px; transition:all .12s}
+.pill-group.vm-subtabs button:hover{color:var(--navy); background:rgba(0,0,0,.03)}
+.pill-group.vm-subtabs button.active{font-weight:700}
+#fc-subtab-toggle button[data-fs="opex"].active{color:#0F766E; background:linear-gradient(180deg,#f0faf8,#d6efea); border-color:#b3ddd5; border-bottom-color:#0F766E}
+#fc-subtab-toggle button[data-fs="cl"].active{color:#4338CA; background:linear-gradient(180deg,#f4f4ff,#e2e4fb); border-color:#c9cdf5; border-bottom-color:#4338CA}
+#fc-subtab-toggle button[data-fs="te"].active{color:#BE185D; background:linear-gradient(180deg,#fff1f6,#fcdce8); border-color:#f6c2d5; border-bottom-color:#BE185D}
+#fc-subtab-toggle button[data-fs="summary"].active{color:#B45309; background:linear-gradient(180deg,#fffaf0,#fdeecb); border-color:#f5d9a8; border-bottom-color:#B45309}
 
 .multisel{position:relative}
 .multisel-trigger{padding:6px 12px; border:1px solid var(--border); border-radius:10px; background:#fff; font-size:13px; cursor:pointer; min-width:170px; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px}
@@ -783,6 +799,26 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
     </div>
   </header>
 
+  <!-- ===== Primary view tabs (Financial Performance / Forecast) — top of page, above filters ===== -->
+  <div id="view-mode-bar" style="background:#fff; border-bottom:1px solid var(--border); padding:12px 24px; display:flex; flex-direction:column; align-items:stretch; gap:0">
+    <div class="pill-group vm-primary" id="bva-fc-toggle">
+      <button data-vm="bva" class="active" onclick="setViewMode('bva')">Financial Performance</button>
+      <button data-vm="forecast" onclick="setViewMode('forecast')">Forecast &#9660;</button>
+    </div>
+    <div id="fc-subtab-area" style="display:none; margin-top:10px">
+      <div class="pill-group vm-subtabs" id="fc-subtab-toggle">
+        <button data-fs="opex" class="active" onclick="setFcSubTab('opex')">Planning General OPEX</button>
+        <button data-fs="cl" onclick="setFcSubTab('cl')">Contract Labor</button>
+        <button data-fs="te" onclick="setFcSubTab('te')">Travel</button>
+        <button data-fs="summary" onclick="setFcSubTab('summary')">Summary</button>
+      </div>
+    </div>
+    <div id="fc-version-area" style="display:none; align-items:center; gap:8px; margin-top:10px">
+      <label style="font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray); font-weight:600">Version</label>
+      <select id="fc-version-select" style="padding:5px 9px; border:1px solid var(--border); border-radius:4px; font-size:13px; color:var(--navy); background:#fff; cursor:pointer"></select>
+    </div>
+  </div>
+
   <button class="filters-toggle" id="filters-toggle-btn" onclick="toggleFilterbar()">&#9881; Filters <span id="filters-toggle-caret">&#9662;</span></button>
   <div class="filterbar" id="filterbar">
     <div class="field"><label>View</label>
@@ -840,26 +876,6 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
       <div class="pill-group" id="reclass-toggle">
         <button data-v="before" class="active">Before</button>
         <button data-v="after">After</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== View mode toggle bar (above all content) ===== -->
-  <div id="view-mode-bar" style="background:#fff; border-bottom:1px solid var(--border); padding:10px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap">
-    <div class="pill-group" id="bva-fc-toggle">
-      <button data-vm="bva" class="active" onclick="setViewMode('bva')">Financial Performance</button>
-      <button data-vm="forecast" onclick="setViewMode('forecast')">Forecast &#9660;</button>
-    </div>
-    <div id="fc-version-area" style="display:none; align-items:center; gap:8px">
-      <label style="font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray); font-weight:600">Version</label>
-      <select id="fc-version-select" style="padding:5px 9px; border:1px solid var(--border); border-radius:4px; font-size:13px; color:var(--navy); background:#fff; cursor:pointer"></select>
-    </div>
-    <div id="fc-subtab-area" style="display:none">
-      <div class="pill-group" id="fc-subtab-toggle">
-        <button data-fs="opex" class="active" onclick="setFcSubTab('opex')">Planning General OPEX</button>
-        <button data-fs="cl" onclick="setFcSubTab('cl')">Contract Labor</button>
-        <button data-fs="te" onclick="setFcSubTab('te')">Travel</button>
-        <button data-fs="summary" onclick="setFcSubTab('summary')">Summary</button>
       </div>
     </div>
   </div>
