@@ -359,6 +359,17 @@ tr:hover .fc-del-icon{opacity:1}
 .fc-detail-grid thead th{position:relative}
 .fc-col-resizer{position:absolute; top:0; right:-4px; width:9px; height:100%; cursor:col-resize; z-index:6; user-select:none}
 .fc-col-resizer:hover{background:rgba(8,145,178,.35)}
+.fc-summary-grid .fc-mtog-wrap{margin-top:3px;line-height:1}
+button.fc-mtog{font-size:9px;padding:1px 5px;border:1px solid var(--border);border-radius:3px;background:#fff;color:var(--gray);cursor:pointer;line-height:1.3;font-family:inherit}
+button.fc-mtog.act{background:#1e40af;color:#fff;border-color:#1e40af}
+button.fc-mtog:disabled{opacity:.35;cursor:not-allowed}
+.fc-summary-grid .fc-caret{display:inline-block;width:10px;font-size:9px;color:var(--cyan)}
+.fc-bva-tag{background:#fbfdff}
+.fc-caret2{display:inline-block;width:10px;font-size:9px;color:var(--cyan);transition:transform .1s}
+.fc-bva-tag.open .fc-caret2{transform:rotate(90deg)}
+.fc-src-badge{display:inline-block;padding:1px 6px;font-size:9px;font-weight:700;border-radius:9px;letter-spacing:.3px;text-transform:uppercase;margin-right:4px}
+.fc-src-badge.plan{background:#fef3c7;color:#92400e}
+.fc-src-badge.act{background:#dbeafe;color:#1e40af}
 .fc-detail-grid td.fc-cell-display{cursor:cell; user-select:none; -webkit-user-select:none}
 .fc-cell-edit input.fc-cell-input{text-align:right}
 .btn-sm.fc-toggle-on{background:var(--navy); color:#fff; border-color:var(--navy)}
@@ -1312,7 +1323,7 @@ const STATE = {
   reclassMode:'before',     // 'before' | 'after' — restate financials with suggested reclasses applied
 };
 
-let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary', descWide: false };
+let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary', descWide: false, summaryActualMonths: {}, summaryActualThrough: null };
 // This set was inherited from the Logistics/Warehousing dashboard this app was cloned from --
 // most of these codes (freight/returns-center/COGS accounts) are irrelevant here since this
 // deployment only ever renders the marketing/media manifest tabs, but 7855000/7855000C (Contract
@@ -6009,26 +6020,34 @@ function renderForecastPane(){
       `<option value="${v.replace(/"/g,'&quot;')}"${v===compareVer?' selected':''}>${v}</option>`
     ).join('');
     const cmpMode = compareVer ? (FORECAST_STATE.cmpViewMode || 'primary') : 'primary';
+    // Three tabs: Working Forecast (primary) · <Compare-To plan name> · Variance (WF − Compare, respecting per-month actuals toggles)
     const modeBtn = (val, label) => `<button data-cmp-mode="${val}" class="${cmpMode===val?'active':''}" ${compareVer?'':'disabled'}>${label}</button>`;
+    const actThru = FORECAST_STATE.summaryActualThrough;
+    const actThruOpts = FM_LABELS.map((m,idx) => `<option value="${idx+1}"${actThru===idx+1?' selected':''}>through ${m}</option>`).join('');
     const cmpBar = `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 14px;background:#fafcff;border:1px solid var(--border);border-radius:6px;flex-wrap:wrap">
         <label class="fc-fb-label" style="margin:0">Compare To</label>
         <select id="fc-summary-cmp" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px;color:var(--navy);background:#fff;cursor:pointer">
-          <option value="">(none — primary only)</option>${cmpOptions}
+          <option value="">(none — Working Forecast only)</option>${cmpOptions}
         </select>
         <div class="fc-cmp-mode-toggle" id="fc-cmp-mode-toggle">
           ${modeBtn('primary', versionName)}
-          ${modeBtn('compare', 'Compare')}
-          ${modeBtn('both', 'Both + Variance')}
+          ${modeBtn('compare', compareVer || 'Compare')}
+          ${modeBtn('variance', 'Variance')}
         </div>
-        ${compareVer ? `<span style="font-size:11px;color:var(--gray)">vs <strong>${compareVer}</strong></span>` : ''}
+        <span style="width:1px;height:20px;background:var(--border)"></span>
+        <label class="fc-fb-label" style="margin:0" title="Overlay actuals on closed months; forecast for the rest. Override individual months with the Fcst/Act switch in each column header.">Actuals</label>
+        <select id="fc-summary-actthru" style="padding:5px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px;color:var(--navy);background:#fff;cursor:pointer">
+          <option value="">off (all forecast)</option>${actThruOpts}
+        </select>
+        ${compareVer ? `<span style="font-size:11px;color:var(--gray)">${cmpMode==='variance' ? 'diff vs' : 'vs'} <strong>${compareVer}</strong></span>` : ''}
       </div>
     `;
 
     const summaryHtml = buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compareVer);
     content.innerHTML = `${editBar}${cmpBar}
       <div class="card">
-        <div class="card-h">Forecast Summary — ${versionName}
+        <div class="card-h">Forecast Summary — ${cmpMode==='compare' ? (compareVer||versionName) : cmpMode==='variance' ? (versionName+' − '+(compareVer||'')) : versionName}
           <span class="meta">${tabName} · ${fys.map(f=>'FY'+(f-2000)).join(' + ')} · ${totalLines} cube rows (PG + CL + Travel)</span>
         </div>
         <div class="bva-wrap">${summaryHtml}</div>
@@ -6036,18 +6055,41 @@ function renderForecastPane(){
     wireFcFilterBar();
     wireSummaryExpand(content);
     document.querySelectorAll('#fc-cmp-mode-toggle button').forEach(btn => {
-      btn.onclick = () => {
-        FORECAST_STATE.cmpViewMode = btn.dataset.cmpMode;
-        renderForecastPane();
-      };
+      if (btn.disabled) return;
+      btn.onclick = () => { FORECAST_STATE.cmpViewMode = btn.dataset.cmpMode; renderForecastPane(); };
     });
     const cmpSel = document.getElementById('fc-summary-cmp');
     if (cmpSel){
       cmpSel.onchange = () => {
         FORECAST_STATE.compareVersionName = cmpSel.value || null;
+        if (!cmpSel.value && FORECAST_STATE.cmpViewMode !== 'primary') FORECAST_STATE.cmpViewMode = 'primary';
         renderForecastPane();
       };
     }
+    const actSel = document.getElementById('fc-summary-actthru');
+    if (actSel){
+      actSel.onchange = () => {
+        const n = parseInt(actSel.value, 10);
+        const m = {};
+        if (!isNaN(n)) fys.forEach(fy => { for (let i=0;i<n;i++) m[fy+'-'+i] = true; });
+        FORECAST_STATE.summaryActualMonths = m;
+        FORECAST_STATE.summaryActualThrough = isNaN(n) ? null : n;
+        renderForecastPane();
+      };
+    }
+    // Per-column Fcst/Act header toggles
+    content.querySelectorAll('button.fc-mtog').forEach(btn => {
+      if (btn.disabled) return;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.mtog;
+        if (!FORECAST_STATE.summaryActualMonths) FORECAST_STATE.summaryActualMonths = {};
+        if (FORECAST_STATE.summaryActualMonths[key]) delete FORECAST_STATE.summaryActualMonths[key];
+        else FORECAST_STATE.summaryActualMonths[key] = true;
+        FORECAST_STATE.summaryActualThrough = null;   // manual override breaks the "through" preset
+        renderForecastPane();
+      };
+    });
     return;
   }
 
@@ -6472,27 +6514,25 @@ function wireFcFilterBar(){
 }
 
 function wireSummaryExpand(content){
-  content.querySelectorAll('tr.fc-bva-cat').forEach(tr => {
-    tr.onclick = () => {
-      const cat = tr.dataset.fcCat;
-      const isOpen = tr.classList.toggle('open');
-      content.querySelectorAll(`tr.fc-bva-acct[data-fc-parent="${CSS.escape(cat)}"]`).forEach(r => {
-        r.style.display = isOpen ? '' : 'none';
-      });
-      if (!isOpen){
-        content.querySelectorAll(`tr.fc-bva-line[data-fc-cat="${CSS.escape(cat)}"]`).forEach(r => { r.style.display = 'none'; });
-        content.querySelectorAll(`tr.fc-bva-acct[data-fc-parent="${CSS.escape(cat)}"]`).forEach(r => r.classList.remove('open'));
-      }
-    };
-  });
-  content.querySelectorAll('tr.fc-bva-acct').forEach(tr => {
+  // Generic collapsible tree: each expandable row has data-node="<id>"; each child row has
+  // data-parent="<id>". Depth is arbitrary (category → GL account → tag category → detail).
+  // Rows are revealed with an explicit 'table-row' — the stylesheet's `.fc-bva-line{display:none}`
+  // would otherwise win over display:''.
+  const childrenOf = (id) => content.querySelectorAll(`tr[data-parent="${CSS.escape(id)}"]`);
+  function hideDesc(id){
+    childrenOf(id).forEach(r => {
+      r.style.display = 'none';
+      if (r.dataset.node){ r.classList.remove('open'); hideDesc(r.dataset.node); }
+    });
+  }
+  content.querySelectorAll('tr[data-node]').forEach(tr => {
+    tr.style.cursor = 'pointer';
     tr.onclick = (ev) => {
       ev.stopPropagation();
-      const acct = tr.dataset.fcAcct;
-      const isOpen = tr.classList.toggle('open');
-      content.querySelectorAll(`tr.fc-bva-line[data-fc-acct-parent="${CSS.escape(acct)}"]`).forEach(r => {
-        r.style.display = isOpen ? '' : 'none';
-      });
+      const id = tr.dataset.node;
+      const open = tr.classList.toggle('open');
+      if (open) childrenOf(id).forEach(r => { r.style.display = 'table-row'; });
+      else hideDesc(id);
     };
   });
 }
@@ -6598,12 +6638,15 @@ function exportPlanningGeneralCsv(){
 // ---- Forecast Summary Card with comparison (Logistics-style) ----
 function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compareVer){
   const showCmp = !!(perFyLinesCmp && compareVer);
-  // Primary = current working version's own months. Compare = the compare-to version's
-  // own months in the same columns. Both = all three side by side (primary, compare,
-  // and a per-month variance) — what Chandler asked for: "see every individual forecast
-  // line item by month in the current working forecast, the forecast I am wanting to
-  // compare to, and then a variance."
-  const cmpMode = showCmp ? (FORECAST_STATE.cmpViewMode || 'primary') : 'primary';
+  // Three view modes (tabs):
+  //  'primary'  → Working Forecast per month (each month can be overlaid with Actuals)
+  //  'compare'  → the Compare-To plan per month (each month can be overlaid with Actuals)
+  //  'variance' → (Working-Forecast-or-Actual) minus the Compare-To plan, per month (GL drill only)
+  const mode = showCmp ? (FORECAST_STATE.cmpViewMode || 'primary') : 'primary';
+  const isVar = mode === 'variance';
+  const actMonths = FORECAST_STATE.summaryActualMonths || {};
+  const isActual = (fy,i) => !!actMonths[fy + '-' + i];
+
   const stdOrder = getStandardCategoryOrder();
   const stdSet = new Set(stdOrder);
   const acctCatMap = {}, acctNameMap = {};
@@ -6619,8 +6662,26 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
     if (!acctNameMapBase[base]) acctNameMapBase[base] = acctNameMap[a];
   });
 
-  const catData = {}, catDataCmp = {}, lineDataByAcct = {};
+  // DATA.accounts records grouped by base account → monthly USD actuals (scope/FX aware, mirrors FP tab)
+  const recsByBase = {};
+  (DATA.accounts||[]).forEach(rec => {
+    const base = String(rec.reporting_account||'').replace(/C$/,'');
+    (recsByBase[base] = recsByBase[base] || []).push(rec);
+  });
+  function acctActualByFy(base){
+    const out = {};
+    fys.forEach(fy => {
+      const arr = new Array(12).fill(0);
+      (recsByBase[base]||[]).forEach(rec => {
+        const m = (typeof filteredActuals === 'function') ? (filteredActuals(rec, fy) || []) : [];
+        for (let i=0;i<12;i++) arr[i] += (m[i]||0);
+      });
+      out[fy] = arr;
+    });
+    return out;
+  }
 
+  const catData = {}, catDataCmp = {}, lineDataByAcct = {};
   function ingestLine(target, lineMapPerAcct, l, isCmp){
     const acct = l.account || l.reporting_account || '';
     const acctBase = acct.replace(/C$/,'');
@@ -6636,7 +6697,7 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
       const lineKey = desc + '|' + vendor;
       if (!lineMapPerAcct[acctBase]) lineMapPerAcct[acctBase] = {};
       if (!lineMapPerAcct[acctBase][lineKey]){
-        lineMapPerAcct[acctBase][lineKey] = { desc, vendor, sourceTag: l._sourceTag || l.source || '', byFy: {}, byFyCmp: {} };
+        lineMapPerAcct[acctBase][lineKey] = { desc, vendor, acct, sourceTag: l._sourceTag || l.source || '', byFy: {}, byFyCmp: {} };
       }
       const rec = lineMapPerAcct[acctBase][lineKey];
       const bag = isCmp ? rec.byFyCmp : rec.byFy;
@@ -6644,181 +6705,178 @@ function buildFcSummaryCard(perFyLines, fys, versionName, perFyLinesCmp, compare
       if (l.fm >= 1 && l.fm <= 12) bag[l.fy][l.fm-1] += (l.amount||0);
     }
   }
-
   fys.forEach(fy => {
     perFyLines[fy].forEach(l => { ingestLine(catData, lineDataByAcct, Object.assign({fy}, l), false); });
-    if (showCmp){
-      (perFyLinesCmp[fy] || []).forEach(l => { ingestLine(catDataCmp, lineDataByAcct, Object.assign({fy}, l), true); });
-    }
+    if (showCmp) (perFyLinesCmp[fy] || []).forEach(l => { ingestLine(catDataCmp, lineDataByAcct, Object.assign({fy}, l), true); });
   });
 
-  function sumPerFy(perFyMonthly){
-    return Object.values(perFyMonthly||{}).reduce((s, arr) => s + (arr||[]).reduce((a,b)=>a+b,0), 0);
+  // Actuals per base account, plus which month columns actually have actuals (to enable toggles)
+  const allBases = new Set();
+  Object.values(catData).forEach(a => Object.keys(a).forEach(b => allBases.add(b)));
+  if (showCmp) Object.values(catDataCmp).forEach(a => Object.keys(a).forEach(b => allBases.add(b)));
+  const actByBase = {};
+  allBases.forEach(b => { actByBase[b] = acctActualByFy(b); });
+  const hasAct = {};
+  fys.forEach(fy => { for (let i=0;i<12;i++){ let s=0; allBases.forEach(b => s += (actByBase[b][fy][i]||0)); if (Math.abs(s) > 0.5) hasAct[fy+'-'+i] = true; } });
+
+  // --- value resolution --------------------------------------------------
+  const g = (map, fy, i) => (map && map[fy] ? (map[fy][i]||0) : 0);
+  // ent = { plan:{fy:[12]}, cmp:{fy:[12]}, act:{fy:[12]} }
+  function dispVal(ent, fy, i){
+    if (isVar){
+      const prim = isActual(fy,i) ? g(ent.act,fy,i) : g(ent.plan,fy,i);
+      return prim - g(ent.cmp,fy,i);
+    }
+    const planv = (mode === 'compare') ? g(ent.cmp,fy,i) : g(ent.plan,fy,i);
+    return isActual(fy,i) ? g(ent.act,fy,i) : planv;
   }
-  function rowCellsHtml(perFyMonthly, opts){
+  function rowCells(ent, opts){
     opts = opts || {};
-    const cls = opts.boldTotals ? 'strong' : '';
-    const tdCls = opts.tdClass ? ' '+opts.tdClass : '';
-    let cells = '';
-    let fyTotals = [];
-    let grand = 0;
+    const b = opts.boldTotals;
+    let cells = '', fyTotals = [], grand = 0;
     fys.forEach(fy => {
-      const mo = perFyMonthly[fy] || new Array(12).fill(0);
-      cells += mo.map(v => `<td class="num section-val${tdCls}">${fmtUSD(v)}</td>`).join('');
-      const ft = mo.reduce((s,v)=>s+v,0);
-      fyTotals.push(ft);
-      grand += ft;
+      let ft = 0;
+      for (let i=0;i<12;i++){
+        const v = dispVal(ent, fy, i); ft += v;
+        const vc = isVar ? (Math.abs(v)<0.5?'muted':v>0?'unfav':'fav') : '';
+        cells += `<td class="num section-val ${isVar?'fc-var '+vc:''}">${fmtUSD(v)}</td>`;
+      }
+      fyTotals.push(ft); grand += ft;
     });
-    const fyCells = fyTotals.map(t => `<td class="num section-val${tdCls}">${cls?'<strong>':''}${fmtUSD(t)}${cls?'</strong>':''}</td>`).join('');
-    const grandCell = (fys.length > 1 && opts.showGrand)
-      ? `<td class="num section-val${tdCls}">${cls?'<strong>':''}${fmtUSD(grand)}${cls?'</strong>':''}</td>` : '';
-    return cells + fyCells + grandCell;
-  }
-  // Per-month (primary − compare) variance block, same column shape as rowCellsHtml.
-  function varianceCellsHtml(perFyPrimary, perFyCmp, opts){
-    opts = opts || {};
-    const cls = opts.boldTotals ? 'strong' : '';
-    let cells = '';
-    let fyTotals = [];
-    fys.forEach(fy => {
-      const p = perFyPrimary[fy] || new Array(12).fill(0);
-      const c = perFyCmp[fy] || new Array(12).fill(0);
-      const diffs = p.map((v,i) => v - (c[i]||0));
-      cells += diffs.map(v => {
-        const favCls = Math.abs(v) < 0.5 ? 'muted' : v > 0 ? 'unfav' : 'fav';
-        return `<td class="num section-val fc-var ${favCls}">${fmtUSD(v)}</td>`;
-      }).join('');
-      fyTotals.push(diffs.reduce((s,v)=>s+v,0));
-    });
-    cells += fyTotals.map(t => {
-      const favCls = Math.abs(t) < 0.5 ? 'muted' : t > 0 ? 'unfav' : 'fav';
-      return `<td class="num section-val fc-var ${favCls}">${cls?'<strong>':''}${fmtUSD(t)}${cls?'</strong>':''}</td>`;
-    }).join('');
+    cells += fyTotals.map(t => { const vc = isVar?(Math.abs(t)<0.5?'muted':t>0?'unfav':'fav'):''; return `<td class="num section-val ${isVar?'fc-var '+vc:''}">${b?'<strong>':''}${fmtUSD(t)}${b?'</strong>':''}</td>`; }).join('');
+    if (fys.length > 1){ const vc = isVar?(Math.abs(grand)<0.5?'muted':grand>0?'unfav':'fav'):''; cells += `<td class="num section-val ${isVar?'fc-var '+vc:''}">${b?'<strong>':''}${fmtUSD(grand)}${b?'</strong>':''}</td>`; }
     return cells;
   }
-  function cmpCells(primaryTotal, cmpVal){
-    const diff = primaryTotal - cmpVal;
-    const pct = cmpVal !== 0 ? diff / Math.abs(cmpVal) : null;
-    const cls = Math.abs(diff) < 0.5 ? 'muted' : diff > 0 ? 'unfav' : 'fav';
-    return `<td class="num fc-cmp">${fmtUSD(cmpVal)}</td>
-            <td class="num fc-cmp ${cls}">${fmtUSD(diff)}</td>
-            <td class="num fc-cmp ${cls}">${pct==null?'—':fmtPct(pct, cls)}</td>`;
+  // Line rows always show the plan for the active mode (no line-level actuals until Phase B)
+  function rowCellsPlanOnly(planByFy){
+    let cells = '', fyTotals = [], grand = 0;
+    fys.forEach(fy => { let ft=0; for (let i=0;i<12;i++){ const v=g(planByFy,fy,i); ft+=v; cells+=`<td class="num section-val">${fmtUSD(v)}</td>`; } fyTotals.push(ft); grand+=ft; });
+    cells += fyTotals.map(t => `<td class="num section-val">${fmtUSD(t)}</td>`).join('');
+    if (fys.length > 1) cells += `<td class="num section-val">${fmtUSD(grand)}</td>`;
+    return cells;
   }
-  // Renders the full column set for one row (cat/acct/line), branching on cmpMode.
-  // 'primary' (default): unchanged existing behavior — primary months + trailing
-  // Compare Total/Δ$/Δ% summary. 'compare': swap the main months for the compare
-  // version's own months. 'both': primary months, then compare months, then a
-  // per-month variance block, all side by side.
-  function rowHtmlForMode(perFyPrimary, perFyCmp, opts){
-    opts = opts || {};
-    if (cmpMode === 'compare'){
-      return rowCellsHtml(perFyCmp, opts);
-    }
-    if (cmpMode === 'both'){
-      return rowCellsHtml(perFyPrimary, opts)
-           + rowCellsHtml(perFyCmp, Object.assign({}, opts, { tdClass: 'fc-cmp' }))
-           + varianceCellsHtml(perFyPrimary, perFyCmp, opts);
-    }
-    const cells = rowCellsHtml(perFyPrimary, Object.assign({}, opts, { showGrand: true }));
-    if (!showCmp) return cells;
-    return cells + cmpCells(sumPerFy(perFyPrimary), sumPerFy(perFyCmp));
+  // Transaction (actuals) detail rows always show their own months, regardless of the toggle.
+  function rowCellsActOnly(actByFy){
+    let cells = '', fyTotals = [], grand = 0;
+    fys.forEach(fy => { let ft=0; for (let i=0;i<12;i++){ const v=g(actByFy,fy,i); ft+=v; cells+=`<td class="num section-val">${fmtUSD(v)}</td>`; } fyTotals.push(ft); grand+=ft; });
+    cells += fyTotals.map(t => `<td class="num section-val">${fmtUSD(t)}</td>`).join('');
+    if (fys.length > 1) cells += `<td class="num section-val">${fmtUSD(grand)}</td>`;
+    return cells;
   }
+  const escId = s => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const magOf = (byFy) => { let s=0; fys.forEach(fy => (byFy[fy]||[]).forEach(v => s += Math.abs(v))); return s; };
+  // Transaction scope filters (mirror the Financial Performance tab's computeDrill)
+  const ssCosSet = (STATE.subSection && STATE.subSection.filter && STATE.subSection.filter.companies) ? new Set(STATE.subSection.filter.companies.map(String)) : null;
+  const coOk = (co) => ssCosSet ? ssCosSet.has(String(co)) : (!STATE.selectedCompanies || STATE.selectedCompanies.has(String(co)));
+  const _selRaw = (ACTIVE_SLUG==='media' && STATE.selectedChannels) ? STATE.selectedChannels : null;
+  const _allRaw = (typeof mktgRawChannels==='function') ? mktgRawChannels() : [];
+  const _chActive = _selRaw && _allRaw.length && _selRaw.size < _allRaw.length;
+  const _selDisp = _chActive ? new Set((typeof MKTG_DISPLAY_CHANNELS!=='undefined'?MKTG_DISPLAY_CHANNELS:[]).filter(d => { const raws=_allRaw.filter(r=>mktgNormChannel(r)===d); return raws.length && raws.every(r=>_selRaw.has(r)); })) : null;
+  const chOk = (rowCh) => !_selDisp || (rowCh!=null && _selDisp.has(mktgNormChannel(rowCh)));
 
-  const monthColsBlock = (tag) => fys.flatMap(fy => FM_LABELS.map(m =>
-    `<th class="section-val${tag?' '+tag:''}">${m}<span class="fc-fy-suffix"> ${fy-2000}</span></th>`)).join('');
-  const fyTotalHdrsBlock = (label, tag) => fys.map(fy =>
-    `<th class="section-val${tag?' '+tag:''}">${label?label+' ':''}FY${fy-2000} Total</th>`).join('');
-
-  let headerCols;
-  if (cmpMode === 'compare'){
-    headerCols = monthColsBlock() + fyTotalHdrsBlock();
-  } else if (cmpMode === 'both'){
-    headerCols = monthColsBlock() + fyTotalHdrsBlock()
-      + monthColsBlock('fc-cmp') + fyTotalHdrsBlock('Cmp', 'fc-cmp')
-      + monthColsBlock('fc-var') + fyTotalHdrsBlock('Var', 'fc-var');
-  } else {
-    const grandTotalHdr = fys.length > 1 ? `<th class="section-val">Grand Total</th>` : '';
-    const cmpHdrs = showCmp
-      ? `<th class="section-val fc-cmp">${compareVer}</th><th class="section-val fc-cmp">&Delta; $</th><th class="section-val fc-cmp">&Delta; %</th>` : '';
-    headerCols = monthColsBlock() + fyTotalHdrsBlock() + grandTotalHdr + cmpHdrs;
-  }
+  // --- header (month labels + per-column Fcst/Act toggles) ---------------
+  const monthHdr = fys.flatMap(fy => FM_LABELS.map((m,i) => {
+    const key = fy+'-'+i, on = isActual(fy,i), en = !!hasAct[key];
+    const tog = `<button class="fc-mtog${on?' act':''}" data-mtog="${key}" ${en?'':'disabled'} title="${en?'Show Actuals / Forecast for this month':'No actuals recorded for this month'}">${on?'Act':'Fcst'}</button>`;
+    return `<th class="section-val">${m}<span class="fc-fy-suffix"> ${fy-2000}</span><div class="fc-mtog-wrap">${tog}</div></th>`;
+  })).join('');
+  const fyTotHdr = fys.map(fy => `<th class="section-val">FY${fy-2000} Total</th>`).join('');
+  const grandHdr = fys.length > 1 ? `<th class="section-val">Grand Total</th>` : '';
 
   const html = [];
-  html.push(`<table class="bva"><thead>`);
-  html.push(`<tr class="group-row"><th>Category / Account</th>${headerCols}</tr>`);
+  html.push(`<table class="bva fc-summary-grid"><thead>`);
+  html.push(`<tr class="group-row"><th>Category / Account</th>${monthHdr}${fyTotHdr}${grandHdr}</tr>`);
   html.push(`</thead><tbody>`);
 
-  const grandPerFy = {}, grandPerFyCmp = {};
-  fys.forEach(fy => { grandPerFy[fy] = new Array(12).fill(0); grandPerFyCmp[fy] = new Array(12).fill(0); });
+  const zeros = () => { const o={}; fys.forEach(fy => o[fy] = new Array(12).fill(0)); return o; };
+  const grandEnt = { plan: zeros(), cmp: zeros(), act: zeros() };
 
   stdOrder.forEach(cat => {
     const accts = catData[cat] || {};
-    const catPerFy = {};
-    fys.forEach(fy => catPerFy[fy] = new Array(12).fill(0));
-    Object.values(accts).forEach(byFy => {
-      fys.forEach(fy => (byFy[fy]||[]).forEach((v,i) => { catPerFy[fy][i] += v; }));
-    });
-    fys.forEach(fy => catPerFy[fy].forEach((v,i) => { grandPerFy[fy][i] += v; }));
-
     const acctsCmp = catDataCmp[cat] || {};
-    const catPerFyCmp = {};
-    fys.forEach(fy => catPerFyCmp[fy] = new Array(12).fill(0));
-    if (showCmp){
-      Object.values(acctsCmp).forEach(byFy => {
-        fys.forEach(fy => (byFy[fy]||[]).forEach((v,i) => { catPerFyCmp[fy][i] += v; }));
-      });
-      fys.forEach(fy => catPerFyCmp[fy].forEach((v,i) => { grandPerFyCmp[fy][i] += v; }));
-    }
+    const bases = new Set([...Object.keys(accts), ...Object.keys(acctsCmp)]);
+    if (!bases.size) return;
 
-    const cells = rowHtmlForMode(catPerFy, catPerFyCmp, { boldTotals: true });
-    html.push(`<tr class="fc-bva-cat bva" data-fc-cat="${cat}">
-      <td>${cat}</td>${cells}
-    </tr>`);
+    const catEnt = { plan: zeros(), cmp: zeros(), act: zeros() };
+    bases.forEach(b => fys.forEach(fy => {
+      const p=(accts[b]&&accts[b][fy])||[], c=(acctsCmp[b]&&acctsCmp[b][fy])||[], a=(actByBase[b]&&actByBase[b][fy])||[];
+      for (let i=0;i<12;i++){ catEnt.plan[fy][i]+=(p[i]||0); catEnt.cmp[fy][i]+=(c[i]||0); catEnt.act[fy][i]+=(a[i]||0); }
+    }));
+    fys.forEach(fy => { for (let i=0;i<12;i++){ grandEnt.plan[fy][i]+=catEnt.plan[fy][i]; grandEnt.cmp[fy][i]+=catEnt.cmp[fy][i]; grandEnt.act[fy][i]+=catEnt.act[fy][i]; } });
 
-    const acctsList = Object.entries(accts).map(([acctBase, byFy]) => {
-      let total = 0;
-      fys.forEach(fy => (byFy[fy]||[]).forEach(v => total += v));
-      return { acctBase, byFy, total };
-    }).filter(a => Math.abs(a.total) > 0.5);
-    acctsList.sort((a,b) => Math.abs(b.total) - Math.abs(a.total));
+    const catNode = 'cat::' + cat;
+    html.push(`<tr class="fc-bva-cat bva" data-fc-cat="${cat}" data-node="${escId(catNode)}"><td>${cat}</td>${rowCells(catEnt,{boldTotals:true})}</tr>`);
 
-    acctsList.forEach(({ acctBase, byFy }) => {
-      const acctName = acctNameMapBase[acctBase] || acctBase;
-      const display = acctName && acctName !== acctBase
-        ? `<span style="color:var(--gray)">${acctBase}</span> ${acctName}` : acctBase;
-      const cmpByFy = showCmp ? ((catDataCmp[cat] || {})[acctBase] || {}) : {};
-      const acctCells = rowHtmlForMode(byFy, cmpByFy);
-      html.push(`<tr class="fc-bva-acct bva" data-fc-parent="${cat}" data-fc-acct="${acctBase}" style="display:none">
-        <td style="padding-left:28px"><span style="color:var(--cyan);font-size:9px;margin-right:4px">&#9656;</span>${display}</td>${acctCells}
-      </tr>`);
+    const baseList = [...bases].map(b => {
+      let tot=0; fys.forEach(fy => { const p=(accts[b]&&accts[b][fy])||[], a=(actByBase[b]&&actByBase[b][fy])||[]; for(let i=0;i<12;i++) tot += Math.abs(p[i]||0)+Math.abs(a[i]||0); });
+      return {b, tot};
+    }).filter(x => x.tot > 0.5).sort((x,y) => y.tot - x.tot);
 
-      const linesByDesc = lineDataByAcct[acctBase] || {};
-      const linesList = Object.entries(linesByDesc).map(([key, info]) => {
-        let total = 0;
-        fys.forEach(fy => (info.byFy[fy]||[]).forEach(v => total += v));
-        return { key, info, total };
-      }).filter(l => Math.abs(l.total) > 0.5);
-      linesList.sort((a,b) => Math.abs(b.total) - Math.abs(a.total));
+    baseList.forEach(({b}) => {
+      const acctName = acctNameMapBase[b] || b;
+      const display = acctName && acctName !== b ? `<span style="color:var(--gray)">${b}</span> ${acctName}` : b;
+      const acctEnt = { plan:{}, cmp:{}, act:{} };
+      fys.forEach(fy => { acctEnt.plan[fy]=(accts[b]&&accts[b][fy])||new Array(12).fill(0); acctEnt.cmp[fy]=(acctsCmp[b]&&acctsCmp[b][fy])||new Array(12).fill(0); acctEnt.act[fy]=(actByBase[b]&&actByBase[b][fy])||new Array(12).fill(0); });
+      const canExpand = !isVar;   // variance tab is GL-drill-only (no forecast-line/transaction rows)
+      const acctNode = 'acct::' + b;
+      html.push(`<tr class="fc-bva-acct bva" data-parent="${escId(catNode)}"${canExpand?` data-node="${escId(acctNode)}"`:''} data-fc-acct="${b}" style="display:none">
+        <td style="padding-left:28px">${canExpand?'<span class="fc-caret" style="color:var(--cyan)">&#9656;</span> ':''}${display}</td>${rowCells(acctEnt)}</tr>`);
 
-      linesList.forEach(({ info }) => {
-        const lineCells = rowHtmlForMode(info.byFy, info.byFyCmp || {});
-        const srcTag = info.sourceTag;
-        const srcLabel = srcTag === 'CONTRACT_LABOR' ? '<span class="fc-src-tag cl">CL</span>'
-                       : srcTag === 'TRAVEL_ENT' ? '<span class="fc-src-tag tr">Trv</span>'
-                       : srcTag === 'SALARIES_WAGES' ? '<span class="fc-src-tag sw">S&amp;W</span>'
-                       : srcTag === 'TOPSIDE_ADJUSTMENTS' ? '<span class="fc-src-tag ts">TS</span>'
-                       : '<span class="fc-src-tag pg">PG</span>';
-        const descTxt = info.desc || '<em style="color:var(--gray)">(no description)</em>';
-        const vendorTxt = info.vendor ? ` <span style="color:var(--gray);font-size:10px">/ ${info.vendor}</span>` : '';
-        html.push(`<tr class="fc-bva-line bva" data-fc-cat="${cat}" data-fc-acct-parent="${acctBase}" style="display:none">
-          <td style="padding-left:52px;color:var(--navy);font-size:11.5px">${srcLabel} ${descTxt}${vendorTxt}</td>${lineCells}
-        </tr>`);
-      });
+      if (canExpand){
+        // Actuals-tab-style drill: group by tag category, with Planned lines + Transactions per month.
+        const tagMap = {};
+        const ensureTag = (id,name,color) => (tagMap[id] = tagMap[id] || { id, name, color, planByFy: zeros(), actByFy: zeros(), planLines: [], actLines: [] });
+        // Planned forecast lines (mode-appropriate), grouped by their tag category
+        Object.values(lineDataByAcct[b] || {}).forEach(info => {
+          const planByFy = (mode === 'compare') ? info.byFyCmp : info.byFy;
+          if (magOf(planByFy) <= 0.5) return;
+          const display = info.desc || info.vendor || 'Unspecified';
+          const c2 = ucGetCategoryForDescAcct(ACTIVE_SLUG, display, info.acct || b);
+          const t = ensureTag(c2?c2.id:'__other__', c2?c2.name:'Other', c2?c2.color:'#c9d3da');
+          fys.forEach(fy => { const arr = planByFy[fy]||[]; for (let i=0;i<12;i++) t.planByFy[fy][i] += (arr[i]||0); });
+          t.planLines.push({ desc: info.desc||'', vendor: info.vendor||'', byFy: planByFy });
+        });
+        // Actual transactions from the GL drill, bucketed into fiscal months, grouped by tag + vendor
+        const seenAct = {};
+        (recsByBase[b]||[]).forEach(rec => {
+          (rec.drill||[]).forEach(d => {
+            if (!fys.includes(d.fy) || !(d.fm>=1 && d.fm<=12)) return;
+            if (!coOk(d.source_company) || !chOk(d.channel)) return;
+            const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
+            const c2 = ucGetCategoryForDescAcct(ACTIVE_SLUG, display, rec.reporting_account);
+            const t = ensureTag(c2?c2.id:'__other__', c2?c2.name:'Other', c2?c2.color:'#c9d3da');
+            t.actByFy[d.fy][d.fm-1] += (d.amount||0);
+            const lk = t.id + '|' + (normKey(display)||display);
+            let ln = seenAct[lk];
+            if (!ln){ ln = seenAct[lk] = { display, byFy: zeros() }; t.actLines.push(ln); }
+            ln.byFy[d.fy][d.fm-1] += (d.amount||0);
+          });
+        });
+        const tags = Object.values(tagMap)
+          .filter(t => (magOf(t.planByFy) + magOf(t.actByFy)) > 0.5)
+          .sort((x,y) => (magOf(y.planByFy)+magOf(y.actByFy)) - (magOf(x.planByFy)+magOf(x.actByFy)));
+        tags.forEach(t => {
+          const tagNode = 'tag::' + b + '::' + t.id;
+          const swatch = `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${t.color};vertical-align:middle;margin:0 5px 2px 0"></span>`;
+          const tagEnt = { plan: t.planByFy, cmp: {}, act: t.actByFy };
+          html.push(`<tr class="fc-bva-tag bva" data-parent="${escId(acctNode)}" data-node="${escId(tagNode)}" style="display:none">
+            <td style="padding-left:52px;font-size:11.5px;color:var(--navy)"><span class="fc-caret2">&#9656;</span> ${swatch}${t.name}</td>${rowCells(tagEnt)}</tr>`);
+          t.planLines.sort((a,c) => magOf(c.byFy) - magOf(a.byFy)).forEach(pl => {
+            const descTxt = pl.desc || '<em style="color:var(--gray)">(no description)</em>';
+            const vendorTxt = pl.vendor ? ` <span style="color:var(--gray);font-size:10px">/ ${pl.vendor}</span>` : '';
+            html.push(`<tr class="fc-bva-detail bva" data-parent="${escId(tagNode)}" style="display:none">
+              <td style="padding-left:78px;font-size:11px;color:var(--navy)"><span class="fc-src-badge plan">Plan</span> ${descTxt}${vendorTxt}</td>${rowCellsPlanOnly(pl.byFy)}</tr>`);
+          });
+          t.actLines.sort((a,c) => magOf(c.byFy) - magOf(a.byFy)).forEach(al => {
+            html.push(`<tr class="fc-bva-detail bva" data-parent="${escId(tagNode)}" style="display:none">
+              <td style="padding-left:78px;font-size:11px;color:var(--navy)"><span class="fc-src-badge act">Act</span> ${al.display}</td>${rowCellsActOnly(al.byFy)}</tr>`);
+          });
+        });
+      }
     });
   });
 
-  const grandCells = rowHtmlForMode(grandPerFy, grandPerFyCmp, { boldTotals: true });
-  html.push(`<tr class="subtotal"><td>Total</td>${grandCells}</tr>`);
+  html.push(`<tr class="subtotal"><td>Total</td>${rowCells(grandEnt,{boldTotals:true})}</tr>`);
   html.push(`</tbody></table>`);
   return html.join('');
 }
