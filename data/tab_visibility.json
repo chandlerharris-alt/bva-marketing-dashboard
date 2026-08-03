@@ -1,0 +1,6 @@
+{
+  "_comment": "Sidebar tab slugs HIDDEN from non-admins in the dashboard. Empty = all visible. Admins always still see hidden tabs (flagged 'hidden'). Edit via Admin > Data Controls > Tab Visibility.",
+  "hidden": [
+    "variance"
+  ]
+}

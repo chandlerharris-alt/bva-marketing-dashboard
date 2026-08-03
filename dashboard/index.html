@@ -386,6 +386,9 @@ button.fc-mtog:disabled{opacity:.35;cursor:not-allowed}
 .fc-src-badge{display:inline-block;padding:1px 6px;font-size:9px;font-weight:700;border-radius:9px;letter-spacing:.3px;text-transform:uppercase;margin-right:4px}
 .fc-src-badge.plan{background:#fef3c7;color:#92400e}
 .fc-src-badge.act{background:#dbeafe;color:#1e40af}
+/* admin-only marker: a tab that is hidden from non-admins */
+.sb-tab.hidden-from-others, .sb-child.hidden-from-others{position:relative}
+.sb-tab.hidden-from-others::after, .sb-child.hidden-from-others::after{content:'hidden'; position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:8px; text-transform:uppercase; letter-spacing:.4px; background:#78350f; color:#fde68a; padding:1px 6px; border-radius:8px; font-weight:700; pointer-events:none}
 .fc-detail-grid td.fc-cell-display{cursor:cell; user-select:none; -webkit-user-select:none}
 .fc-cell-edit input.fc-cell-input{text-align:right}
 .btn-sm.fc-toggle-on{background:var(--navy); color:#fff; border-color:var(--navy)}
@@ -1465,6 +1468,22 @@ function loadVersionVisibility(){
     .catch(() => { VERSION_HIDDEN = new Set(); });
 }
 
+// ===== Tab visibility (admin-curated) =====
+// Admins hide sidebar tabs from everyone (e.g. a tab that isn't ready yet). Stored as a list of
+// HIDDEN tab slugs in data/tab_visibility.json (global, readable without auth) with a per-browser
+// localStorage override for instant effect. Admins ALWAYS still see hidden tabs (flagged "hidden").
+let TAB_HIDDEN = new Set();
+function loadTabVisibility(){
+  return fetch('../data/tab_visibility.json', {cache:'no-store'})
+    .then(r => r.ok ? r.json() : null).catch(() => null)
+    .then(cfg => {
+      let hidden = (cfg && Array.isArray(cfg.hidden)) ? cfg.hidden : [];
+      try { const s = localStorage.getItem('bva_hidden_tabs'); if (s){ const arr = JSON.parse(s); if (Array.isArray(arr)) hidden = arr; } } catch(e){}
+      TAB_HIDDEN = new Set(hidden.map(String));
+    })
+    .catch(() => { TAB_HIDDEN = new Set(); });
+}
+
 // FY27 AOP revenue (channel -> region -> 12 fiscal months, USD) — the Plan/AOP revenue on the
 // Media tab. Source: data/rev_aop_fy27.json (built from the Global Revenue by Region & Channel AOP).
 let REV_AOP = null;
@@ -1496,7 +1515,7 @@ fetch('../data/_domain_config.json', {cache:'no-store'})
         if (t) t.textContent = cfg.brand_label;
       }
     }
-    return Promise.all([loadVersionVisibility(), loadRevAop()]).then(() =>
+    return Promise.all([loadVersionVisibility(), loadTabVisibility(), loadRevAop()]).then(() =>
       fetch('../data/manifest.json', {cache:'no-store'}).then(r => r.json()));
   })
   .then(m => { MANIFEST = m; renderSidebar(); loadOverview(); filterSidebarByAccess(); })
@@ -4790,6 +4809,7 @@ function setViewMode(mode){
     if (fcSubArea) fcSubArea.style.display = '';
     populateFcVersionSelect();
     renderForecastPane();
+    hydrateForecastFromServer(ACTIVE_SLUG);   // pull in other forecasters' Saved edits, then re-render if changed
   } else {
     if (bvBody) bvBody.style.display = '';
     if (filterbar) filterbar.style.display = '';
@@ -4878,6 +4898,60 @@ const LS_KEY = 'bva-logistics-overrides';
 function loadOverrides(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
 function saveOverrides(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(e){} }
 
+// ===== Shared forecast hydration =====
+// Forecast edits live in this browser's localStorage until a forecaster clicks "Save Forecast",
+// which commits overrides/<slug>__<verKey>__<source>.json to the repo. Nothing used to read those
+// back, so a saved forecast was invisible to everyone else. hydrateForecastFromServer() pulls the
+// committed files for the active tab and merges them into the working store so Saved edits are
+// shared/live. A per-key "published snapshot" (bva_fc_published) lets us tell an untouched cell
+// (safe to refresh from the server) from one this browser has locally edited (never clobber it).
+let FC_DIRTY_KEYS = new Set();     // override keys this browser has edited but not yet published
+let _fcHydrating = false;
+function _fcLoadPubSnap(){ try { return JSON.parse(localStorage.getItem('bva_fc_published')||'{}'); } catch(e){ return {}; } }
+function _fcSavePubSnap(o){ try { localStorage.setItem('bva_fc_published', JSON.stringify(o)); } catch(e){} }
+async function hydrateForecastFromServer(slug){
+  if (!slug || _fcHydrating) return;
+  _fcHydrating = true;
+  try {
+    const ver = 'Working Forecast';   // only the Working Forecast is editable/savable
+    const sources = ['PLANNING_GENERAL','CONTRACT_LABOR','TRAVEL_ENT','SALARIES_WAGES','TOPSIDE_ADJUSTMENTS'];
+    let fys = [];
+    try { const fbv = fcDiscoverVersions(); fys = [...(fbv[ver]||[])]; } catch(e){}
+    if (!fys.length) fys = [2026, 2027, 2028];
+    const store = loadOverrides();
+    const pub = _fcLoadPubSnap();
+    let changed = false;
+    for (const fy of fys){
+      const verKey = ver + ' | FY' + fy;
+      const safeVer = verKey.replace(/[^A-Za-z0-9._+-]/g, '_');
+      for (const src of sources){
+        let data = null;
+        try { const r = await fetch(`../overrides/${slug}__${safeVer}__${src}.json`, {cache:'no-store'}); if (r.ok) data = await r.json(); } catch(e){}
+        if (!data) continue;
+        const key = overrideKey(slug, verKey, src);
+        const section = {
+          added:   Array.isArray(data.added)   ? data.added   : [],
+          removed: Array.isArray(data.removed) ? data.removed : [],
+          edited:  (data.edited && typeof data.edited === 'object') ? data.edited : {},
+        };
+        const newJson = JSON.stringify(section);
+        const localJson = JSON.stringify(store[key] || null);
+        const snapJson = pub[key] || JSON.stringify(null);
+        // Protect unsaved local work: skip if edited this session OR local diverges from last snapshot.
+        if (FC_DIRTY_KEYS.has(key) || localJson !== snapJson){ if (!pub[key]) pub[key] = newJson; continue; }
+        if (localJson !== newJson){ store[key] = section; changed = true; }
+        pub[key] = newJson;
+        if (src === 'TRAVEL_ENT'){
+          try { if (Array.isArray(data.trips)) saveTrips(slug, verKey, data.trips); } catch(e){}
+          try { if (data.rates && typeof data.rates === 'object') saveTravelRates(data.rates); } catch(e){}
+        }
+      }
+    }
+    _fcSavePubSnap(pub);
+    if (changed && STATE.viewMode === 'forecast' && typeof renderForecastPane === 'function') renderForecastPane();
+  } finally { _fcHydrating = false; }
+}
+
 function overrideKey(slug, versionKey, source){ return [slug, versionKey, source].join('||'); }
 
 function getOverrideSection(slug, versionKey, source){
@@ -4924,6 +4998,20 @@ function applyOverrides(lines, slug, versionKey, source){
     if (edited[mk]) out = Object.assign({}, out, edited[mk]);
     out = withCellEdit(out, edited[mk] && edited[mk].cellEdits);
     return out;
+  });
+  // Synthesize a month-record for any cell edit whose month has no base line, so edits to
+  // previously-blank months (e.g. a prepaid / partial-year line's empty months) still appear in
+  // BOTH the editor grid and the Summary aggregation (applyOverrides is the shared read path).
+  const _mkProto = {}, _mkFms = {};
+  result.forEach(l => { const mk = matchKey(l); if (!_mkProto[mk]) _mkProto[mk] = l; (_mkFms[mk] = _mkFms[mk] || new Set()).add(l.fm); });
+  Object.keys(edited).forEach(mk => {
+    const ce = edited[mk] && edited[mk].cellEdits;
+    if (!ce || !_mkProto[mk]) return;   // no base line for this mk at all → represented via added[]
+    Object.keys(ce).forEach(fk => {
+      const fm = (+fk) + 1;
+      if (_mkFms[mk].has(fm)) return;    // a base record exists for this month → withCellEdit handled it
+      result.push(Object.assign({}, _mkProto[mk], { fm, amount: ce[fk], _overridden: true, _synth_cell: true }));
+    });
   });
   added.forEach(a => {
     const row = Object.assign({ source }, a);
@@ -5178,6 +5266,7 @@ function fcCellEdit(td, opts){
     let pend = fcCellCoords(td);
     if (move){ const n = fcNeighbor(td, move); if (n) pend = fcCellCoords(n); }
     FC_PENDING_SEL = { anchor:pend, focus:pend };
+    if (Math.abs(p.value - currentVal) < 0.005){ renderForecastPane(); return true; }  // unchanged → no override, no blue
     fcCellSave(td, fm, mk, src, p.value, verKey);
     return true;
   };
@@ -5199,6 +5288,7 @@ function _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey){
   verKey = verKey || STATE.fcVersion;
   const src = source || (STATE.fcSubTab === 'cl' ? 'CONTRACT_LABOR' : 'PLANNING_GENERAL');
   const k = overrideKey(ACTIVE_SLUG, verKey, src);
+  try { FC_DIRTY_KEYS.add(k); } catch(e){}   // this browser has unsaved edits on this key — hydration must not clobber
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
   const addedIdx = (o[k].added||[]).findIndex(a => matchKey(Object.assign({source:src}, a)) === mk);
   // Store the value explicitly — including 0. A 0 is a *forced blank* (the user cleared/zeroed the
@@ -8540,6 +8630,7 @@ function varRunningTotal(regionData, region, metric, fy, throughFm){
 }
 
 function loadVarianceTabView(){
+  if (TAB_HIDDEN.has('variance') && !authIsAdmin()){ loadOverview(); return; }
   closeSidebarDrawer();
   STATE.viewMode = 'bva';
   STATE.subSection = null;
@@ -11531,10 +11622,25 @@ function renderAccessDenied(){
 }
 function filterSidebarByAccess(){
   if (!AUTH_STATE.loaded) return;
-  const wraps = document.querySelectorAll('.manifest-tab-wrap');
-  wraps.forEach(w => {
-    const slug = w.querySelector('[data-slug]')?.dataset.slug || '';
-    w.style.display = authCanSeeSlug(slug) ? '' : 'none';
+  const admin = authIsAdmin();
+  // Dynamic manifest tabs: respect per-user access AND the global admin-curated tab hide.
+  document.querySelectorAll('.manifest-tab-wrap').forEach(w => {
+    const inner = w.querySelector('[data-slug]');
+    const slug = inner?.dataset.slug || '';
+    const hidden = TAB_HIDDEN.has(slug);
+    const show = authCanSeeSlug(slug) && (admin || !hidden);
+    w.style.display = show ? '' : 'none';
+    if (inner) inner.classList.toggle('hidden-from-others', show && hidden && admin);
+  });
+  // Fixed tabs (Overview / Reclass / Variance Invest-Divest) — apply the global hide only.
+  ['sb-overview-tab','sb-reclass-tab','sb-variance-tab'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const slug = el.dataset.slug || '';
+    const hidden = TAB_HIDDEN.has(slug);
+    const show = admin || !hidden;
+    el.style.display = show ? '' : 'none';
+    el.classList.toggle('hidden-from-others', show && hidden && admin);
   });
 }
 // ---- Save button (dirty-state tracking) ----
@@ -11598,6 +11704,15 @@ async function saveForecastToServer(){
     });
     if (!res.ok){ const t = await res.text().catch(()=>res.statusText); throw new Error(`HTTP ${res.status} ${t}`); }
     markForecastClean();
+    // This key is now published — clear its dirty flag and align the snapshot so hydration treats
+    // local == published (won't skip or re-clobber on the next Forecast open).
+    try {
+      const k = overrideKey(slug, verKey, src);
+      FC_DIRTY_KEYS.delete(k);
+      const pub = _fcLoadPubSnap();
+      pub[k] = JSON.stringify({ added: overrides.added||[], removed: overrides.removed||[], edited: overrides.edited||{} });
+      _fcSavePubSnap(pub);
+    } catch(e){}
     if (lbl) lbl.textContent = 'Saved · ' + new Date().toLocaleTimeString();
     if (typeof renderForecastPane === 'function') renderForecastPane();
   } catch(e){
@@ -12063,6 +12178,19 @@ async function renderDataControlsView(){
     ? allBase.map(b => `<label class="adm-chip ${!VERSION_HIDDEN.has(b)?'on':''}"><input type="checkbox" data-ver="${b.replace(/"/g,'&quot;')}" ${!VERSION_HIDDEN.has(b)?'checked':''}> ${b}</label>`).join('')
     : '<span style="font-size:12px;color:var(--gray)">Open any data tab once, then return here to load the version list.</span>';
 
+  // Sidebar tabs available to hide/show globally (fixed tabs + manifest data tabs)
+  const _tabVisList = [
+    { slug:'overview', name:'Overview' },
+    { slug:'reclass',  name:'Reclass Suggestions' },
+    { slug:'variance', name:'Variance Invest/Divest' },
+    ...(((typeof MANIFEST!=='undefined' && MANIFEST && MANIFEST.tabs) || []).map(t => ({ slug:t.slug, name:t.name })))
+  ];
+  const gTabChips = _tabVisList.map(t => {
+    const esc = String(t.slug).replace(/"/g,'&quot;');
+    const vis = !TAB_HIDDEN.has(t.slug);
+    return `<label class="adm-chip ${vis?'on':''}"><input type="checkbox" data-tab-vis="${esc}" ${vis?'checked':''}> ${t.name}</label>`;
+  }).join('');
+
   content.innerHTML = `
     <div class="card" style="max-width:1100px">
       <div class="card-h">Transaction Type Tagging
@@ -12091,6 +12219,18 @@ async function renderDataControlsView(){
         <div id="adm-ver-list" style="display:flex;flex-wrap:wrap;gap:6px">${gVerChips}</div>
       </div>
     </div>
+    <div class="card" style="max-width:1100px;margin-top:16px">
+      <div class="card-h">Tab Visibility (global)
+        <span class="meta">Hide sidebar tabs from everyone. Unchecked = hidden. You (admin) still see hidden tabs, flagged &ldquo;hidden&rdquo;.</span>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+          <button class="btn-sm btn-primary" id="adm-tab-save-btn" onclick="adminSaveTabs()">Save Tab Visibility</button>
+          <span id="adm-tab-status" style="font-size:12px;color:var(--gray)"></span>
+        </div>
+        <div id="adm-tab-list" style="display:flex;flex-wrap:wrap;gap:6px">${gTabChips}</div>
+      </div>
+    </div>
   `;
   content.querySelectorAll('.dc-bucket-select').forEach(sel => {
     sel.onchange = () => { DC_PENDING[sel.dataset.code] = sel.value; markDcDirty(); };
@@ -12098,7 +12238,33 @@ async function renderDataControlsView(){
   content.querySelectorAll('#adm-ver-list input[data-ver]').forEach(cb => {
     cb.onchange = () => { cb.closest('.adm-chip').classList.toggle('on', cb.checked); markAdminVersionsDirty(); };
   });
+  content.querySelectorAll('#adm-tab-list input[data-tab-vis]').forEach(cb => {
+    cb.onchange = () => cb.closest('.adm-chip').classList.toggle('on', cb.checked);
+  });
   markAdminVersionsClean();
+}
+// Save which sidebar tabs are hidden globally. Instant per-browser + live app state; then
+// commits data/tab_visibility.json for all users (mirrors adminSaveVersions / /api/tab-config).
+async function adminSaveTabs(){
+  const status = document.getElementById('adm-tab-status');
+  const boxes = [...document.querySelectorAll('#adm-tab-list input[data-tab-vis]')];
+  const hidden = boxes.filter(cb => !cb.checked).map(cb => cb.dataset.tabVis);
+  try { localStorage.setItem('bva_hidden_tabs', JSON.stringify(hidden)); } catch(e){}
+  TAB_HIDDEN = new Set(hidden.map(String));
+  try { filterSidebarByAccess(); } catch(e){}
+  if (status) status.textContent = 'Saved to this browser ✓';
+  try {
+    const res = await fetch('/api/tab-config', {
+      method:'POST', credentials:'include',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ hidden }),
+    });
+    if (status) status.textContent = res.ok
+      ? 'Saved for all users ✓ ' + new Date().toLocaleTimeString()
+      : 'Saved to this browser ✓ (global sync needs sign-in gate — HTTP ' + res.status + ')';
+  } catch(e){
+    if (status) status.textContent = 'Saved to this browser ✓ (global sync unavailable)';
+  }
 }
 function adminUserCardHtml(email, norm, tabs, allBase){
   const CAPS = [['view','View'],['tag','Tag'],['comment','Comment'],['forecast','Forecast'],['insight','Insight']];
