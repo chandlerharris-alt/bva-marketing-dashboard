@@ -1,6 +1,6 @@
 {
   "_saved_by": "michael.doran@ifit.com",
-  "_saved_at": "2026-08-03T18:38:32.547Z",
+  "_saved_at": "2026-08-03T18:39:00.402Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -10,7 +10,7 @@
     "PLANNING_GENERAL|SKAI (Kenshoo)|Skai|8941000": {
       "spreads": [],
       "cellEdits": {
-        "2": 10000000
+        "2": 0
       }
     }
   }
