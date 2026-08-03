@@ -1,6 +1,6 @@
 {
   "_saved_by": "chandler.harris@ifit.com",
-  "_saved_at": "2026-07-29T05:27:21.344Z",
+  "_saved_at": "2026-08-03T18:36:37.734Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -10,7 +10,9 @@
     "PLANNING_GENERAL|SKAI (Kenshoo)|Skai|8941000": {
       "spreads": [],
       "cellEdits": {
-        "1": 6563
+        "0": 26250,
+        "1": 6563,
+        "4": 1000000
       }
     },
     "PLANNING_GENERAL|REHEARSALS||7865000": {
@@ -24,6 +26,21 @@
       "spreads": [],
       "cellEdits": {
         "4": 1250
+      }
+    },
+    "PLANNING_GENERAL|CRM - Marketing Cloud software||7865000": {
+      "spreads": [],
+      "cellEdits": {}
+    },
+    "PLANNING_GENERAL|TrueGroup||7855000": {
+      "spreads": [],
+      "cellEdits": {}
+    },
+    "PLANNING_GENERAL|Marketing Studio in Logan (Rent + Cleaning)||8941000": {
+      "spreads": [],
+      "cellEdits": {
+        "3": 20,
+        "4": 4100
       }
     }
   }
