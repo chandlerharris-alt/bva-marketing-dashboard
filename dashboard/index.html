@@ -1484,6 +1484,38 @@ function loadTabVisibility(){
     .catch(() => { TAB_HIDDEN = new Set(); });
 }
 
+// ===== App-update watcher =====
+// If a newer dashboard build is deployed while this tab is open, prompt the user to refresh so they
+// pick up the latest features. Uses the served index.html's ETag / Last-Modified (changes every
+// deploy on Cloudflare Pages and the local static server) — no manual version bumping required.
+let _appVerMarker = null;
+async function _appVerFetch(){
+  try {
+    const r = await fetch('index.html', { method:'HEAD', cache:'no-store' });
+    return r.headers.get('etag') || r.headers.get('last-modified') || r.headers.get('content-length') || null;
+  } catch(e){ return null; }
+}
+async function initAppUpdateWatcher(){
+  _appVerMarker = await _appVerFetch();
+  setInterval(async () => {
+    const m = await _appVerFetch();
+    if (m && _appVerMarker && m !== _appVerMarker) showAppUpdateBanner();
+  }, 5 * 60 * 1000);
+}
+function showAppUpdateBanner(){
+  if (document.getElementById('app-update-banner')) return;
+  const bar = document.createElement('div');
+  bar.id = 'app-update-banner';
+  bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:11000;background:linear-gradient(90deg,#0f172a,#005856);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:14px;justify-content:center;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.28)';
+  bar.innerHTML = '<span>&#128260; A new version of the dashboard is available.</span>'
+    + '<button onclick="location.reload()" style="background:#fff;color:#0f172a;border:none;border-radius:6px;padding:5px 14px;font-weight:700;cursor:pointer">Refresh now</button>'
+    + '<span style="opacity:.85;font-size:11px">If features still look off after refreshing, sign out and back in.</span>'
+    + '<span onclick="this.parentNode.remove();document.body.style.paddingTop=\'\'" title="Dismiss" style="cursor:pointer;opacity:.7;margin-left:6px;font-size:16px;line-height:1">&times;</span>';
+  document.body.appendChild(bar);
+  document.body.style.paddingTop = '46px';
+}
+initAppUpdateWatcher();
+
 // FY27 AOP revenue (channel -> region -> 12 fiscal months, USD) — the Plan/AOP revenue on the
 // Media tab. Source: data/rev_aop_fy27.json (built from the Global Revenue by Region & Channel AOP).
 let REV_AOP = null;
@@ -4909,6 +4941,13 @@ let FC_DIRTY_KEYS = new Set();     // override keys this browser has edited but 
 let _fcHydrating = false;
 function _fcLoadPubSnap(){ try { return JSON.parse(localStorage.getItem('bva_fc_published')||'{}'); } catch(e){ return {}; } }
 function _fcSavePubSnap(o){ try { localStorage.setItem('bva_fc_published', JSON.stringify(o)); } catch(e){} }
+// The last-published (shared/committed) override section for a key — the "Last Published Forecast"
+// baseline. Used to (a) mark a cell blue only when it deviates from published, and (b) render the
+// read-only Last Published view.
+function fcPublishedSection(slug, verKey, source){
+  try { const raw = _fcLoadPubSnap()[overrideKey(slug, verKey, source)]; if (raw){ const s = JSON.parse(raw); return { added:s.added||[], removed:s.removed||[], edited:s.edited||{} }; } } catch(e){}
+  return { added:[], removed:[], edited:{} };
+}
 // Merge two override sections; `mine` wins on any conflict (per cell / per line). Used so that
 // pulling a teammate's Saved edits (base) never drops my own in-progress edits, and so saving
 // never clobbers a teammate's edits I hadn't yet pulled.
@@ -4997,8 +5036,8 @@ function computeSpreadMonthly(spreads){
   return out;
 }
 
-function applyOverrides(lines, slug, versionKey, source){
-  const ov = getOverrideSection(slug, versionKey, source);
+function applyOverrides(lines, slug, versionKey, source, sectionOverride){
+  const ov = sectionOverride || getOverrideSection(slug, versionKey, source);
   const removed = new Set(ov.removed||[]);
   const edited = ov.edited||{};
   const added = ov.added||[];
@@ -5806,7 +5845,7 @@ function groupLinesByCatAcct(lines){
 }
 
 // Flat line-item editor (Logistics-style spreadsheet) for opex/cl tabs
-function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEdit){
+function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEdit, opts){
   canEdit = canEdit !== false;
   const stdOrder = getStandardCategoryOrder();
   const stdSet = new Set(stdOrder);
@@ -5858,6 +5897,11 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   const ov1 = getOverrideSection(slug, verKey1, primarySrc);
   const edited = ov1.edited || {};
   const added = ov1.added || [];
+  opts = opts || {};
+  const readonlyPub = !!opts.published;                    // rendering the read-only "Last Published Forecast" view
+  const pub1 = fcPublishedSection(slug, verKey1, primarySrc);  // baseline for the blue-only-if-changed check
+  const pubEdited = pub1.edited || {};
+  const pubAdded = pub1.added || [];
 
   // Overlay cell-level edits directly onto the grouped monthly arrays. applyOverrides() can only
   // attach a cellEdit to a month that already has an underlying source record, so an edit/paste
@@ -5915,12 +5959,16 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
 
     let spreads = [];
     let cellEdits = {};
+    let pubCellEdits = {};
     let chipsBlock = '', prepaidBtn = '';
     if (fys.length === 1){
       const editRec = edited[mk] || null;
       const addedRec = added.find(a => matchKey(Object.assign({source: primarySrc}, a)) === mk) || null;
       spreads = (editRec ? editRec.spreads : (addedRec ? addedRec.spreads : null)) || [];
       cellEdits = (editRec ? editRec.cellEdits : (addedRec ? addedRec.cellEdits : null)) || {};
+      const pubEditRec = pubEdited[mk] || null;
+      const pubAddedRec = pubAdded.find(a => matchKey(Object.assign({source: primarySrc}, a)) === mk) || null;
+      pubCellEdits = (pubEditRec ? pubEditRec.cellEdits : (pubAddedRec ? pubAddedRec.cellEdits : null)) || {};
       const chips = spreads.map(sp => {
         const mo = FM_LABELS[(sp.startFm-1)%12];
         const amt = sp.amount >= 1000 ? `$${Math.round(sp.amount/1000)}K` : `$${Math.round(sp.amount)}`;
@@ -5947,7 +5995,10 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       mo.forEach((v,i) => { grandPerFy[fy][i] += v; });
       const verKey = versionName + ' | FY' + fy;
       cellsHtml += mo.map((v, i) => {
-        const overridden = String(i) in cellEdits;
+        const li = String(i);
+        // Blue only when this cell's local value deviates from the Last Published Forecast — not
+        // merely because an override exists (a published/teammate edit is not "your unsaved change").
+        const overridden = !readonlyPub && (li in cellEdits) && (!(li in pubCellEdits) || Math.abs((+cellEdits[li]) - (+pubCellEdits[li])) > 0.005);
         const cls = (canEdit ? 'num fc-cell-display' : 'num fc-cell-readonly') + (overridden ? ' fc-cell-overridden' : '');
         const click = canEdit ? `onmousedown="fcCellMouseDown(event,this)" ondblclick="fcCellEdit(this)" oncontextmenu="fcCellContextMenu(event,this)"` : '';
         return `<td class="${cls}" data-fm="${i}" data-mk="${mk.replace(/"/g,'&quot;')}"
@@ -6010,6 +6061,12 @@ function toggleFcDescWide(){
   }
 }
 
+// Toggle the read-only "Last Published Forecast" reference view (the last Saved/shared numbers).
+function toggleFcShowPublished(){
+  FORECAST_STATE.showPublished = !FORECAST_STATE.showPublished;
+  renderForecastPane();
+}
+
 function renderForecastPane(){
   if (!DATA || !ACTIVE_SLUG) { return; }
   const content = document.getElementById('fc-content');
@@ -6044,7 +6101,7 @@ function renderForecastPane(){
 
   const isEditor = (STATE.fcSubTab === 'opex' || STATE.fcSubTab === 'cl');
   const isWorkingForecast = versionName === 'Working Forecast';
-  const canEdit = isEditor && isWorkingForecast && authCan(ACTIVE_SLUG, 'forecast');
+  const canEdit = isEditor && isWorkingForecast && authCan(ACTIVE_SLUG, 'forecast') && !FORECAST_STATE.showPublished;
 
   const sourceMap = { opex:'PLANNING_GENERAL', cl:'CONTRACT_LABOR' };
   const src = sourceMap[STATE.fcSubTab] || 'PLANNING_GENERAL';
@@ -6058,15 +6115,18 @@ function renderForecastPane(){
        ${canEdit ? '<button class="btn-sm" onclick="fcUndo()" title="Undo last edit (Ctrl+Z)">↶ Undo</button>' : ''}
        ${canEdit ? '<button class="btn-sm" onclick="fcRedo()" title="Redo (Ctrl+Y)">↷ Redo</button>' : ''}
        <button class="btn-sm" onclick="fcResetAllColWidths()" title="Reset any custom column widths back to automatic">⇔ Reset columns</button>
-       <button class="btn-sm" onclick="fcShowKeyHelp()" title="Keyboard &amp; spreadsheet shortcuts">⌨ Shortcuts</button>`
+       <button class="btn-sm" onclick="fcShowKeyHelp()" title="Keyboard &amp; spreadsheet shortcuts">⌨ Shortcuts</button>
+       <button class="btn-sm${FORECAST_STATE.showPublished ? ' fc-toggle-on' : ''}" id="fc-pub-btn" onclick="toggleFcShowPublished()" title="View the last published (saved) forecast — read-only reference only, not the plan to edit">${FORECAST_STATE.showPublished ? '👁 Viewing Last Published (read-only)' : '👁 Last Published Forecast'}</button>`
     : '';
-  const banner = isEditor
-    ? (canEdit
-        ? (typeof SAVE_STATE !== 'undefined' && SAVE_STATE.dirty
-            ? '<div class="edit-warning" style="margin-bottom:10px">&#9888; You have unsaved edits in this browser. Click <strong>Save Forecast</strong> at the top right to push them to the repo.</div>'
-            : '')
-        : '<div class="readonly-banner" style="margin-bottom:10px">&#128274; Read-only — only <strong>Working Forecast</strong> can be edited. Switch versions to make changes.</div>')
-    : '';
+  const banner = !isEditor ? ''
+    : FORECAST_STATE.showPublished
+      ? '<div class="readonly-banner" style="margin-bottom:10px;background:#eef6ff;border-color:#bfdbff;color:#1e40af">&#128065; <strong>Last Published Forecast</strong> — read-only reference (the last Saved / shared numbers). This is <em>not</em> an editable plan. Turn off &ldquo;Last Published Forecast&rdquo; to edit the Working Forecast.</div>'
+      : (canEdit
+          ? (typeof SAVE_STATE !== 'undefined' && SAVE_STATE.dirty
+              ? '<div class="edit-warning" style="margin-bottom:10px">&#9888; You have unsaved edits in this browser. Click <strong>Save Forecast</strong> at the top right to push them to the repo.</div>'
+              : '')
+          : '<div class="readonly-banner" style="margin-bottom:10px">&#128274; Read-only — only <strong>Working Forecast</strong> can be edited. Switch versions to make changes.</div>')
+    ;
   const editBar = `
     <div class="fc-filter-bar">
       <div class="fc-fb-group">
@@ -6225,7 +6285,8 @@ function renderForecastPane(){
   fys.forEach(fy => {
     const verKey = versionName + ' | FY' + fy;
     let lines = collectFcLines(src, versionName, fy);
-    lines = applyOverrides(lines, ACTIVE_SLUG, verKey, src);
+    const pubSec = FORECAST_STATE.showPublished ? fcPublishedSection(ACTIVE_SLUG, verKey, src) : null;
+    lines = applyOverrides(lines, ACTIVE_SLUG, verKey, src, pubSec);
     lines = lines.filter(l => !FC_EXCLUDE_ACCTS.has(String(l.account || l.reporting_account || '').replace(/C$/i,'')));
     if (STATE.fcSubTab === 'cl') lines = lines.filter(l => !/^78550/.test(String(l.account || l.reporting_account || '')));
     perFyLines[fy] = lines;
@@ -6242,7 +6303,7 @@ function renderForecastPane(){
     return;
   }
 
-  const editorHtml = buildFcLineItemEditor(perFyLines, fys, versionName, src, ACTIVE_SLUG, canEdit);
+  const editorHtml = buildFcLineItemEditor(perFyLines, fys, versionName, src, ACTIVE_SLUG, canEdit, { published: FORECAST_STATE.showPublished });
 
   content.innerHTML = `${editBar}
     <div class="card">
