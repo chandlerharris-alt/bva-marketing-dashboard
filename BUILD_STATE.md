@@ -2,6 +2,14 @@
 
 **Purpose:** durable state so a context reset doesn't backpedal. Update after each meaningful change.
 
+## UPDATE 2026-08-04 (corrections + new features)
+- **Deploy is GIT AUTO-DEPLOY**, confirmed: pushing `main` → Cloudflare Pages builds → live (verify: `wrangler pages deployment list --project-name bva-marketing-dashboard`). No manual wrangler step needed for content.
+- **Google sign-in gate IS now live** (`functions/_middleware.js` + env vars set) — open item #2 below is DONE. Consequence: an unauthenticated `curl`/fetch of the site returns a **Google login page**, not the app — don't mistake that for a stale/old deploy.
+- **Shared forecasts:** editors' Saved forecast edits now hydrate for everyone on Forecast-view open (`hydrateForecastFromServer`), merge-on-save prevents clobber, and Summary/Variance reflect edits.
+- **Orphaned-override safety net:** a saved edit whose `matchKey` (source|description|vendor|account) no longer matches current data (nightly refresh drifts these fields — e.g. "SKAI (Kenshoo)"↔"Skai / Kenshoo", or FY shifts) now renders as its own row instead of silently vanishing. Root fragility remains (text-based key); durable fix = stable cube line id.
+- **Never-cache app HTML** (`_headers`) + "new version available" banner → no more stale-build drift across users. Everyone hard-refreshes ONCE to pick up the no-store build; automatic after.
+- Full port playbook for the sister dashboards (Freemotion/Hardware): `../MATCH_MARKETING_DASHBOARD.md` (+ `../MARKETING_DASHBOARD_UPGRADES_PORT.md`, `../FORECAST_SPREADSHEET_PORT.md`).
+
 ## Where things live
 - **Local repo:** `C:\Users\chandler.harris\BvA Build\bva-marketing-dashboard`
 - **GitHub:** `chandlerharris-alt/bva-marketing-dashboard` (private, branch `main`)
