@@ -4909,6 +4909,28 @@ let FC_DIRTY_KEYS = new Set();     // override keys this browser has edited but 
 let _fcHydrating = false;
 function _fcLoadPubSnap(){ try { return JSON.parse(localStorage.getItem('bva_fc_published')||'{}'); } catch(e){ return {}; } }
 function _fcSavePubSnap(o){ try { localStorage.setItem('bva_fc_published', JSON.stringify(o)); } catch(e){} }
+// Merge two override sections; `mine` wins on any conflict (per cell / per line). Used so that
+// pulling a teammate's Saved edits (base) never drops my own in-progress edits, and so saving
+// never clobbers a teammate's edits I hadn't yet pulled.
+function _fcMergeSections(base, mine){
+  base = base || {added:[],removed:[],edited:{}};
+  mine = mine || {added:[],removed:[],edited:{}};
+  const out = { added: [], removed: [], edited: {} };
+  out.removed = Array.from(new Set([...(base.removed||[]), ...(mine.removed||[])]));
+  const addMap = {};
+  (base.added||[]).forEach(a => { addMap[matchKey(Object.assign({source:a.source||''}, a))] = a; });
+  (mine.added||[]).forEach(a => { addMap[matchKey(Object.assign({source:a.source||''}, a))] = a; });   // mine overwrites
+  out.added = Object.values(addMap);
+  const mks = new Set([...Object.keys(base.edited||{}), ...Object.keys(mine.edited||{})]);
+  mks.forEach(mk => {
+    const b = (base.edited||{})[mk] || {}, m = (mine.edited||{})[mk] || {};
+    out.edited[mk] = {
+      cellEdits: Object.assign({}, b.cellEdits||{}, m.cellEdits||{}),          // mine wins per fiscal month
+      spreads: (m.spreads && m.spreads.length) ? m.spreads : (b.spreads||[]),
+    };
+  });
+  return out;
+}
 async function hydrateForecastFromServer(slug){
   if (!slug || _fcHydrating) return;
   _fcHydrating = true;
@@ -4934,13 +4956,12 @@ async function hydrateForecastFromServer(slug){
           removed: Array.isArray(data.removed) ? data.removed : [],
           edited:  (data.edited && typeof data.edited === 'object') ? data.edited : {},
         };
-        const newJson = JSON.stringify(section);
-        const localJson = JSON.stringify(store[key] || null);
-        const snapJson = pub[key] || JSON.stringify(null);
-        // Protect unsaved local work: skip if edited this session OR local diverges from last snapshot.
-        if (FC_DIRTY_KEYS.has(key) || localJson !== snapJson){ if (!pub[key]) pub[key] = newJson; continue; }
-        if (localJson !== newJson){ store[key] = section; changed = true; }
-        pub[key] = newJson;
+        const before = JSON.stringify(store[key] || null);
+        // If I've edited this key this session, merge (my in-progress edits win) so I still see
+        // teammates' edits on cells I haven't touched. Otherwise adopt the shared/published section.
+        const merged = FC_DIRTY_KEYS.has(key) ? _fcMergeSections(section, store[key]) : section;
+        if (JSON.stringify(merged) !== before){ store[key] = merged; changed = true; }
+        pub[key] = JSON.stringify(section);
         if (src === 'TRAVEL_ENT'){
           try { if (Array.isArray(data.trips)) saveTrips(slug, verKey, data.trips); } catch(e){}
           try { if (data.rates && typeof data.rates === 'object') saveTravelRates(data.rates); } catch(e){}
@@ -11684,7 +11705,18 @@ async function saveForecastToServer(){
   if (ver !== 'Working Forecast'){ alert('Only the Working Forecast version can be saved.'); return; }
   const fy = (FORECAST_STATE.fys && FORECAST_STATE.fys[0]) || 2027;
   const verKey = ver + ' | FY' + fy;
-  const overrides = loadOverrides()[overrideKey(slug, verKey, src)] || { added:[], removed:[], edited:{} };
+  let overrides = loadOverrides()[overrideKey(slug, verKey, src)] || { added:[], removed:[], edited:{} };
+  // Merge against the latest committed section so this save doesn't clobber a teammate's edits that
+  // were saved since we last pulled (my edits win on conflict). Also write the merged result back
+  // to the local store so the grid reflects the combined state immediately.
+  try {
+    const _sv = verKey.replace(/[^A-Za-z0-9._+-]/g,'_');
+    const rr = await fetch(`../overrides/${slug}__${_sv}__${src}.json`, {cache:'no-store'});
+    if (rr.ok){ const remote = await rr.json();
+      overrides = _fcMergeSections({added:remote.added||[],removed:remote.removed||[],edited:remote.edited||{}}, overrides);
+      const st = loadOverrides(); st[overrideKey(slug, verKey, src)] = overrides; saveOverrides(st);
+    }
+  } catch(e){}
   const isTravel = STATE.fcSubTab === 'te';
   const extra = isTravel ? { trips: loadTrips(slug, verKey), rates: loadTravelRates() } : {};
   const btn = document.getElementById('save-forecast-btn');
