@@ -1,3 +1,14 @@
+# Never cache the app HTML — guarantees everyone loads the latest build (no stale-version drift).
+# (Data/overrides JSON are already fetched with cache:'no-store' in code.)
+/
+  Cache-Control: no-store, must-revalidate
+/index.html
+  Cache-Control: no-store, must-revalidate
+/dashboard/
+  Cache-Control: no-store, must-revalidate
+/dashboard/index.html
+  Cache-Control: no-store, must-revalidate
+
 /*
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

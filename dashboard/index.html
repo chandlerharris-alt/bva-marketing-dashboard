@@ -5064,13 +5064,29 @@ function applyOverrides(lines, slug, versionKey, source, sectionOverride){
   // BOTH the editor grid and the Summary aggregation (applyOverrides is the shared read path).
   const _mkProto = {}, _mkFms = {};
   result.forEach(l => { const mk = matchKey(l); if (!_mkProto[mk]) _mkProto[mk] = l; (_mkFms[mk] = _mkFms[mk] || new Set()).add(l.fm); });
+  const _fyM = /FY(\d{4})\s*$/.exec(versionKey || ''); const _ovFy = _fyM ? +_fyM[1] : undefined;
+  const _ovVer = String(versionKey || '').replace(/\s*\|\s*FY\d{4}\s*$/, '');
   Object.keys(edited).forEach(mk => {
     const ce = edited[mk] && edited[mk].cellEdits;
-    if (!ce || !_mkProto[mk]) return;   // no base line for this mk at all → represented via added[]
+    if (!ce) return;
+    let proto = _mkProto[mk], orphan = false;
+    if (!proto){
+      // ORPHANED EDIT SAFETY NET: no current base line matches this saved key (the underlying data
+      // drifted — description/vendor/account/fiscal-year changed in a refresh). Synthesize a row from
+      // the key itself so a saved edit is NEVER silently lost — it renders as its own (flagged) line.
+      orphan = true;
+      const p = String(mk).split('|');
+      proto = { source: p[0] || source,
+                description: p.length >= 4 ? p.slice(1, p.length-2).join('|') : (p[1] || ''),
+                vendor: p.length >= 3 ? p[p.length-2] : '',
+                account: p[p.length-1] || '', reporting_account: p[p.length-1] || '',
+                version: _ovVer, fy: _ovFy, expense_type: 'Expense', _orphanEdit: true };
+      _mkFms[mk] = new Set();
+    }
     Object.keys(ce).forEach(fk => {
       const fm = (+fk) + 1;
       if (_mkFms[mk].has(fm)) return;    // a base record exists for this month → withCellEdit handled it
-      result.push(Object.assign({}, _mkProto[mk], { fm, amount: ce[fk], _overridden: true, _synth_cell: true }));
+      result.push(Object.assign({}, proto, { fm, amount: ce[fk], _overridden: true, _synth_cell: true, _orphanEdit: orphan }));
     });
   });
   added.forEach(a => {
