@@ -4982,12 +4982,22 @@ async function hydrateForecastFromServer(slug){
     const store = loadOverrides();
     const pub = _fcLoadPubSnap();
     let changed = false;
+    const dbg = [];   // per-file hydrate diagnostics — surfaced only when the URL has ?fcdebug
     for (const fy of fys){
       const verKey = ver + ' | FY' + fy;
       const safeVer = verKey.replace(/[^A-Za-z0-9._+-]/g, '_');
       for (const src of sources){
-        let data = null;
-        try { const r = await fetch(`../overrides/${slug}__${safeVer}__${src}.json`, {cache:'no-store'}); if (r.ok) data = await r.json(); } catch(e){}
+        const fileUrl = `../overrides/${slug}__${safeVer}__${src}.json`;
+        let data = null, status = 'ERR', ct = '', note = '';
+        try {
+          const r = await fetch(fileUrl, {cache:'no-store', credentials:'same-origin'});
+          status = r.status; ct = (r.headers.get('content-type')||'').split(';')[0];
+          if (r.ok){
+            if (/json/i.test(ct)) { data = await r.json(); }
+            else { const t = await r.text(); note = /accounts\.google|sign in|<!doctype/i.test(t) ? 'LOGIN-PAGE(auth gate)' : ('non-json:'+t.slice(0,24)); }
+          }
+        } catch(e){ note = 'threw:'+((e&&e.message)||e); }
+        if (status !== 404) dbg.push(`${src} FY${fy}: HTTP ${status} ${ct||'-'} ${data ? ('edits='+Object.keys(data.edited||{}).length) : note}`);
         if (!data) continue;
         const key = overrideKey(slug, verKey, src);
         const section = {
@@ -5008,6 +5018,12 @@ async function hydrateForecastFromServer(slug){
       }
     }
     _fcSavePubSnap(pub);
+    if (/[?&]fcdebug/i.test(location.search)){
+      let el = document.getElementById('fc-hyd-debug');
+      if (!el){ el = document.createElement('div'); el.id='fc-hyd-debug'; el.style.cssText='position:fixed;bottom:8px;left:8px;z-index:12000;background:#0b1021;color:#7CFC00;font:11px/1.45 ui-monospace,monospace;padding:10px 12px;max-width:660px;max-height:46vh;overflow:auto;border:1px solid #2dd4bf;border-radius:6px;white-space:pre-wrap;box-shadow:0 6px 20px rgba(0,0,0,.4)'; document.body.appendChild(el); }
+      const sk = Object.keys(loadOverrides());
+      el.textContent = 'HYDRATE DEBUG  (add nothing to hide)\nslug='+slug+'  viewMode='+STATE.viewMode+'  changed='+changed+'\nfys='+JSON.stringify(fys)+'\n\nfetches:\n'+(dbg.length?dbg.join('\n'):'(no files found / none fetched)')+'\n\noverride store keys ('+sk.length+'):\n'+(sk.join('\n')||'(empty)');
+    }
     if (changed && STATE.viewMode === 'forecast' && typeof renderForecastPane === 'function') renderForecastPane();
   } finally { _fcHydrating = false; }
 }
