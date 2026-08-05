@@ -1,6 +1,6 @@
 {
   "_saved_by": "chandler.harris@ifit.com",
-  "_saved_at": "2026-08-05T03:26:20.461Z",
+  "_saved_at": "2026-08-05T16:15:59.797Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -11,9 +11,10 @@
       "cellEdits": {
         "0": 26250,
         "1": 6563,
-        "2": 1000000,
-        "4": 1000000,
-        "5": 5000000
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
       },
       "spreads": []
     },
