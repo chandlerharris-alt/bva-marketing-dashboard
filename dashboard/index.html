@@ -5018,6 +5018,7 @@ async function hydrateForecastFromServer(slug){
       }
     }
     _fcSavePubSnap(pub);
+    if (changed) saveOverrides(store);   // <-- persist hydrated edits so the editor/Summary (which re-read localStorage) actually see them
     if (/[?&]fcdebug/i.test(location.search)){
       let el = document.getElementById('fc-hyd-debug');
       if (!el){ el = document.createElement('div'); el.id='fc-hyd-debug'; el.style.cssText='position:fixed;bottom:8px;left:8px;z-index:12000;background:#0b1021;color:#7CFC00;font:11px/1.45 ui-monospace,monospace;padding:10px 12px;max-width:660px;max-height:46vh;overflow:auto;border:1px solid #2dd4bf;border-radius:6px;white-space:pre-wrap;box-shadow:0 6px 20px rgba(0,0,0,.4)'; document.body.appendChild(el); }
