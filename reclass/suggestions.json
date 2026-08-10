@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-10T15:38:11.794Z",
+  "_saved_at": "2026-08-10T15:39:10.228Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -43,6 +43,27 @@
       "note": "Should go here: Distributors - Awareness Marketing (TOFU, events)",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-10T15:38:11.794Z"
+    },
+    "rc-1786376349946-613": {
+      "id": "rc-1786376349946-613",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "studio grip socks -lancement pilate",
+      "display_snapshot": "STUDIO GRIP SOCKS -LANCEMENT PILATE",
+      "amount_snapshot": -3300,
+      "to_account": "6740000",
+      "to_account_name": null,
+      "to_department": "75",
+      "to_company": "41",
+      "to_tag_id": "uc-1786376349946-591",
+      "note": null,
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-10T15:39:10.228Z"
     }
   }
 }
