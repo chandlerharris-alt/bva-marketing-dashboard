@@ -493,8 +493,25 @@ def main():
             co_int = 0
         d["forecasts_by_company"].setdefault(v_key, {}).setdefault(co_int, empty_monthly())[fm - 1] += amt
 
+    # ---- De-duplicate PG against the specialized modeled sheets ----
+    # Accounts modeled on a specialized Adaptive sheet (Salaries & Wages, Travel &
+    # Entertainment, Contract Labor) are ALSO copied into ADAPTIVE_PLANNING_GENERAL
+    # with the SAME values. Summing both double-counts the forecast — e.g. dept-075
+    # Travel acct 8955000 and Salaries acct 7875000 each appeared in PG *and* their
+    # specialized sheet at identical amounts, so the dashboard showed 2x. The
+    # specialized sheets are the granular source of truth, so drop the PG copy for
+    # any (dept, account) a specialized sheet already supplies.
+    specialized_keys = set()
+    for _src in (sw, te, cl):
+        for _r in _src:
+            _ra = (_r.get("reporting_account") or "").strip()
+            if _ra:
+                specialized_keys.add((pad_dept(_r.get("dept_str")), _ra))
+
     for r in [x for x in pg if x.get("version_name") in ALLOWED_VERSIONS and (x.get("reporting_account") or "").strip() not in excludes]:
         ra = (r.get("reporting_account") or "").strip()
+        if (pad_dept(r.get("dept_str")), ra) in specialized_keys:
+            continue  # de-dupe: this account is authoritatively sourced from a specialized sheet
         an = ""  # not in PG; key on RA only and we'll match on existing entry's name
         # Try to find the matching account by RA alone — first match wins
         match_key = None
