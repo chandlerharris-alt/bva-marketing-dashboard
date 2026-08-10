@@ -27,6 +27,11 @@ SELECT
     SUM(SALES)                       AS amount
 FROM ANALYTICS.ANALYTICS_TABLEAU_360_MART.T360_GLOBAL_SALES_ORDERS
 WHERE TRIM(CHANNEL) IN ('Wholesale','DTC','Freemotion','Other')
+  -- Exclude non-hardware subscription/membership dollars that leak into the DTC
+  -- channel here (ORDER_TYPE='Membership' — ~$2.5M in US DTC FY26). This feed is
+  -- hardware sales orders only; membership belongs to the subscription P&L, so it
+  -- must not inflate the Sales-Orders revenue actual vs the hardware AOP.
+  AND (ORDER_TYPE IS NULL OR UPPER(TRIM(ORDER_TYPE)) <> 'MEMBERSHIP')
   AND RR_FISCAL_YEAR  BETWEEN {fy_min} AND {fy_max}
   AND RR_FISCAL_MONTH BETWEEN 1 AND 12
 GROUP BY 1, 2, 3, 4
