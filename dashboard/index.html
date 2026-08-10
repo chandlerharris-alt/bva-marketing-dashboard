@@ -2215,6 +2215,68 @@ function companyScopedMonthly(byCompanyFy, fy, effCo){
   return monthly;
 }
 
+// ============================ FX conversion helpers ============================
+// Forecast/plan amounts are stored in LOCAL currency (same convention as actuals),
+// with a per-company breakdown in *_by_company. The correct USD figure divides each
+// company's local amount by fxRate(co, fy, fm). Several render paths historically
+// summed the raw local amounts without converting, overstating non-USD entities
+// (Mexico/China/Australia/Canada) and understating GBP/EUR. These helpers centralise
+// the conversion so every consumer uses the identical, tested logic.
+
+// Parse the fiscal year out of a version key like "Working Forecast | FY2027".
+function fyFromVerKey(key){ const m = /FY(\d+)$/.exec(String(key||'')); return m ? +m[1] : (STATE && STATE.fy); }
+
+// Sum a {companyCode: [12]} LOCAL monthly map into display currency, scoped to effCo
+// (a Set, or null/empty = all companies). Divides by fxRate() in USD mode (no-op in
+// Local mode). srcData lets Overview callers convert against their own dataset
+// (OV_COST_DATA) rather than the global DATA.
+function sumCoMapCur(byCo, fy, effCo, srcData){
+  const monthly = new Array(12).fill(0);
+  const all = !effCo || effCo.size === 0;
+  Object.entries(byCo || {}).forEach(([co, arr]) => {
+    if (!all && !effCo.has(String(co))) return;
+    if (!arr) return;
+    for (let i=0;i<12;i++){
+      const v = arr[i] || 0;
+      if (STATE.currency === 'USD'){ const r = fxRate(co, fy, i+1, srcData); monthly[i] += r ? v/r : v; }
+      else monthly[i] += v;
+    }
+  });
+  return monthly;
+}
+
+// FX-correct account forecast series for a version key. Uses the per-company breakdown
+// (forecasts_by_company) so non-USD entities convert; falls back to the raw rollup only
+// when there is no company breakdown (revenue acct 4500000 — already consolidated USD).
+function acctForecastMonthly(rec, key, effCo){
+  const byCo = (rec.forecasts_by_company || {})[key];
+  if (byCo && Object.keys(byCo).length) return sumCoMapCur(byCo, fyFromVerKey(key), effCo, null);
+  return ((rec.forecasts && rec.forecasts[key]) || new Array(12).fill(0)).slice();
+}
+// FX-correct dept-level forecast series (dept_totals records).
+function deptForecastMonthly(d, key, effCo){
+  const byCo = (d.forecasts_by_company || {})[key];
+  if (byCo && Object.keys(byCo).length) return sumCoMapCur(byCo, fyFromVerKey(key), effCo, null);
+  return ((d.forecasts && d.forecasts[key]) || new Array(12).fill(0)).slice();
+}
+
+// Convert one forecast_line's amount to display currency. PLANNING_GENERAL / OPEX lines
+// are local (divide by fxRate); RPT_FORECAST_DETAIL revenue lines are already USD.
+function fcLineCur(l, co, fy, srcData){
+  const amt = l.amount || 0;
+  if (STATE.currency !== 'USD' || l.source === 'RPT_FORECAST_DETAIL') return amt;
+  const r = fxRate(co, fy, l.fm, srcData);
+  return r ? amt / r : amt;
+}
+// Company code for a forecast_line: RPT lines tag source_company; PLANNING_GENERAL lines
+// carry the entity in level_code.
+function fcLineCo(l){
+  if (l.source_company != null) return String(l.source_company);
+  if (l.level_code != null && String(l.level_code).trim() !== '') return String(parseInt(l.level_code,10));
+  return '';
+}
+// ===============================================================================
+
 // Channel + company scoped actuals, summed DIRECTLY from actuals_by_channel_company
 // (fy -> channel -> company -> [12]) rather than approximated by an annual pro-rata ratio.
 // This fixes two bugs the ratio approach had: (1) the ratio was computed from GLOBAL
@@ -2263,7 +2325,7 @@ function channelForecastMonthly(rec, verKey, effCo){
     const chOk = narrowed ? (l.channel != null && STATE.selectedChannels.has(String(l.channel))) : true;
     if (!chOk) return;
     const fm = l.fm; if (!fm || fm < 1 || fm > 12) return;
-    monthly[fm-1] += (l.amount || 0);
+    monthly[fm-1] += fcLineCur(l, co || fcLineCo(l), fy, null);
   });
 
   // Prior-FY prepaid spillover — mirrors collectFcLines()'s equivalent block (and
@@ -2291,7 +2353,12 @@ function channelForecastMonthly(rec, verKey, effCo){
         segments.forEach(({fm0, payment, gap}) => {
           const perMonth = payment / gap;
           const tail = Math.max(0, gap - (12 - fm0));
-          for (let i = 0; i < Math.min(tail, 12); i++) monthly[i] += perMonth;
+          const _co = co || fcLineCo(g.sample);
+          for (let i = 0; i < Math.min(tail, 12); i++){
+            let pm = perMonth;
+            if (STATE.currency === 'USD' && g.sample.source !== 'RPT_FORECAST_DETAIL'){ const r = fxRate(_co, fy, i+1, null); pm = r ? pm/r : pm; }
+            monthly[i] += pm;
+          }
         });
       });
     }
@@ -2394,7 +2461,24 @@ function getSeries(rec, key){
       });
       return monthly;
     }
+    if (scope && rec.forecast_lines && rec.forecast_lines.length) {
+      // Dept-scoped forecast, FX-correct: sum forecast_lines for the allowed depts,
+      // converting each line by its own company (forecasts_by_dept has no company
+      // dimension, so it can't be converted directly).
+      const allowed = new Set(scope);
+      const lfy = fyFromVerKey(key);
+      const monthly = new Array(12).fill(0);
+      (rec.forecast_lines || []).forEach(l => {
+        if ((l.version + ' | FY' + l.fy) !== key) return;
+        const ds = (l.dept_str != null) ? String(l.dept_str).padStart(3,'0') : null;
+        if (!ds || !allowed.has(ds)) return;
+        if (l.fm < 1 || l.fm > 12) return;
+        monthly[l.fm-1] += fcLineCur(l, fcLineCo(l), lfy, null);
+      });
+      return monthly;
+    }
     if (scope && rec.forecasts_by_dept) {
+      // Fallback (no forecast_lines to convert from): raw local sum across companies.
       const fbd = rec.forecasts_by_dept[key] || {};
       const allowed = new Set(scope);
       const monthly = new Array(12).fill(0);
@@ -2409,7 +2493,8 @@ function getSeries(rec, key){
     const fy = +key.slice('ACTUALS_FY'.length);
     return filteredActuals(rec, fy);
   }
-  return (rec.forecasts[key] || new Array(12).fill(0)).slice();
+  // Default (no dept/company sub-scope): FX-correct rollup across all effective companies.
+  return acctForecastMonthly(rec, key, effectiveCompanySet());
 }
 function getActuals(rec){ return filteredActuals(rec, STATE.fy); }
 
@@ -2675,7 +2760,7 @@ function forecastMonthlyChannelRegion(rec, channel, region, versionKey){
     if ((l.channel || '') !== channel) return;
     const _lr = (l.level_code != null && String(l.level_code).trim() !== '') ? regionForCompany(l.level_code) : regionForDept(l.dept_str || '');
     if (_lr !== region) return;
-    monthly[l.fm - 1] += (l.amount || 0);
+    monthly[l.fm - 1] += fcLineCur(l, fcLineCo(l), fy, null);
   });
   // N+M splice for current-FY versions
   if (fy === STATE.fy){
@@ -2950,7 +3035,7 @@ function whCompanyForecast(co, versionKey){
     (a.forecast_lines||[]).forEach(l=>{
       if (l.version!==ver||l.fy!==fy) return;
       if (String(l.level_code)!==String(co)) return;
-      if (l.fm>=1&&l.fm<=12) monthly[l.fm-1]+=(l.amount||0);
+      if (l.fm>=1&&l.fm<=12) monthly[l.fm-1]+=fcLineCur(l, String(co), fy, null);
     });
   });
   if (fy===STATE.fy){
@@ -3241,7 +3326,7 @@ function renderDeptRollup(){
     const B = effectiveDeptSeries(d, STATE.cmpB);
     const PY = STATE.cmpPY && STATE.cmpPY.startsWith('ACTUALS_FY')
       ? deptActualsMonthly(d, +STATE.cmpPY.slice('ACTUALS_FY'.length))
-      : (d.forecasts[STATE.cmpPY] || []);
+      : deptForecastMonthly(d, STATE.cmpPY, effectiveCompanySet());
     return {
       dept: d.dept_str,
       name: d.name,
@@ -3422,7 +3507,7 @@ function effectiveDeptSeries(d, key){
     const fy = +key.slice('ACTUALS_FY'.length);
     return deptActualsMonthly(d, fy);
   }
-  const arr = (d.forecasts[key] || new Array(12).fill(0)).slice();
+  const arr = deptForecastMonthly(d, key, effectiveCompanySet());
   if (key.endsWith('| FY' + STATE.fy)){
     const m = key.match(/(\d+)\+(\d+)/);
     if (m){
@@ -3893,7 +3978,7 @@ function coAcctForecast(rec, co, versionKey) {
   (rec.forecast_lines || []).forEach(l => {
     if (l.version !== ver || l.fy !== fy) return;
     if (String(l.level_code) !== String(co)) return;
-    if (l.fm >= 1 && l.fm <= 12) monthly[l.fm - 1] += (l.amount || 0);
+    if (l.fm >= 1 && l.fm <= 12) monthly[l.fm - 1] += fcLineCur(l, String(co), fy, null);
   });
   // N+M splice for current-FY versions
   if (fy === STATE.fy) {
@@ -7469,25 +7554,16 @@ function renderBvaVariances(){
     const cat = a.category || 'Other';
 
     function sumFm(src, vk){
-      let tot = 0;
       if (src === 'actual'){
-        const cm = (a.actuals_by_company||{})[fy]||{};
-        if (effCo && effCo.size > 0) effCo.forEach(co => { const arr = cm[co]; if (arr) tot += (arr[fm-1]||0); });
-        else Object.values(cm).forEach(arr => { if (arr) tot += (arr[fm-1]||0); });
-      } else {
-        const fcm = (a.forecasts_by_company||{})[vk]||{};
-        if (effCo && effCo.size > 0) effCo.forEach(co => { const arr = fcm[co]; if (arr) tot += (arr[fm-1]||0); });
-        else Object.values(fcm).forEach(arr => { if (arr) tot += (arr[fm-1]||0); });
+        return sumCoMapCur((a.actuals_by_company||{})[fy]||{}, fy, effCo, null)[fm-1];
       }
-      return tot;
+      return sumCoMapCur((a.forecasts_by_company||{})[vk]||{}, fyFromVerKey(vk), effCo, null)[fm-1];
     }
     if (!byCat[cat]) byCat[cat] = { cat, actual: 0, forecast: 0, py: 0 };
     byCat[cat].actual += sumFm('actual', null);
     byCat[cat].forecast += sumFm('forecast', verKey);
     { // prior-year same-month actuals (for the collapsed summary's "vs PY")
-      const cmPY = (a.actuals_by_company||{})[fy-1]||{};
-      if (effCo && effCo.size > 0) effCo.forEach(co => { const arr = cmPY[co]; if (arr) byCat[cat].py += (arr[fm-1]||0); });
-      else Object.values(cmPY).forEach(arr => { if (arr) byCat[cat].py += (arr[fm-1]||0); });
+      byCat[cat].py += sumCoMapCur((a.actuals_by_company||{})[fy-1]||{}, fy-1, effCo, null)[fm-1];
     }
   });
   const top = Object.values(byCat).map(c => {
@@ -7710,11 +7786,7 @@ function ovRegionActuals(data, fy, companyCodes){
   let tot = 0;
   (data.accounts||[]).forEach(a => {
     if (!ovIsOpex(a)) return;
-    const cm = (a.actuals_by_company||{})[fy]||{};
-    Object.entries(cm).forEach(([co, arr]) => {
-      if (!coSet.has(co)) return;
-      (arr||[]).forEach(v => tot += (v||0));
-    });
+    tot += sum(sumCoMapCur((a.actuals_by_company||{})[fy]||{}, fy, coSet, data));
   });
   return tot;
 }
@@ -7724,11 +7796,7 @@ function ovRegionForecast(data, fy, verKey, companyCodes){
   let tot = 0;
   (data.accounts||[]).forEach(a => {
     if (!ovIsOpex(a)) return;
-    const cm = (a.forecasts_by_company||{})[verKey]||{};
-    Object.entries(cm).forEach(([co, arr]) => {
-      if (!coSet.has(co)) return;
-      (arr||[]).forEach(v => tot += (v||0));
-    });
+    tot += sum(sumCoMapCur((a.forecasts_by_company||{})[verKey]||{}, fy, coSet, data));
   });
   return tot;
 }
@@ -7743,15 +7811,8 @@ function ovCatActualsMonthly(data, fy, category, companyCodes){
     const catOverrides = {'7855100':'Contract Labor'};
     const effectiveCat = catOverrides[ra] || cat;
     if (effectiveCat !== category) return;
-    const cm = (a.actuals_by_company||{})[fy]||{};
-    if (coSet){
-      Object.entries(cm).forEach(([co, arr]) => {
-        if (!coSet.has(co)) return;
-        (arr||[]).forEach((v,i) => monthly[i] += (v||0));
-      });
-    } else {
-      Object.values(cm).forEach(arr => (arr||[]).forEach((v,i) => monthly[i] += (v||0)));
-    }
+    const conv = sumCoMapCur((a.actuals_by_company||{})[fy]||{}, fy, coSet, data);
+    for (let i=0;i<12;i++) monthly[i] += conv[i];
   });
   return monthly;
 }
@@ -7766,15 +7827,8 @@ function ovCatForecastMonthly(data, fy, verKey, category, companyCodes){
     const catOverrides = {'7855100':'Contract Labor'};
     const effectiveCat = catOverrides[ra] || cat;
     if (effectiveCat !== category) return;
-    const cm = (a.forecasts_by_company||{})[verKey]||{};
-    if (coSet){
-      Object.entries(cm).forEach(([co, arr]) => {
-        if (!coSet.has(co)) return;
-        (arr||[]).forEach((v,i) => monthly[i] += (v||0));
-      });
-    } else {
-      Object.values(cm).forEach(arr => (arr||[]).forEach((v,i) => monthly[i] += (v||0)));
-    }
+    const conv = sumCoMapCur((a.forecasts_by_company||{})[verKey]||{}, fy, coSet, data);
+    for (let i=0;i<12;i++) monthly[i] += conv[i];
   });
   return monthly;
 }
@@ -7783,16 +7837,11 @@ function ovSoftwareActualsMonthly(data, fy, companyCodes){
   return ovCatActualsMonthly(data, fy, 'Software', companyCodes);
 }
 
-function ovAcctMonthly(acct, fy, src, verKey){
-  const monthly = new Array(12).fill(0);
+function ovAcctMonthly(acct, fy, src, verKey, data){
   if (src === 'actual'){
-    const cm = (acct.actuals_by_company||{})[fy]||{};
-    Object.values(cm).forEach(arr => (arr||[]).forEach((v,i) => monthly[i] += (v||0)));
-  } else {
-    const cm = (acct.forecasts_by_company||{})[verKey]||{};
-    Object.values(cm).forEach(arr => (arr||[]).forEach((v,i) => monthly[i] += (v||0)));
+    return sumCoMapCur((acct.actuals_by_company||{})[fy]||{}, fy, null, data);
   }
-  return monthly;
+  return sumCoMapCur((acct.forecasts_by_company||{})[verKey]||{}, fy, null, data);
 }
 
 function ovBlend(actual, forecast, throughFm){
@@ -7931,15 +7980,9 @@ function computeInsightsFromData(){
 
     // Get GL actual for a given FM, filtered by company
     function glForFm(checkFm){
-      let tot = 0;
-      if (effCo && effCo.size > 0){
-        effCo.forEach(co => { const arr = cm[co]; if (arr) tot += (arr[checkFm-1]||0); });
-      } else {
-        Object.values(cm).forEach(arr => { if (arr) tot += (arr[checkFm-1]||0); });
-      }
-      return tot;
+      return sumCoMapCur(cm, fy, effCo, null)[checkFm-1];
     }
-    // Get rolled-up forecast for a given FM from forecasts_by_company
+    // Get rolled-up forecast for a given FM from forecasts_by_company (FX-correct)
     function fcForFm(checkFm){
       let tot = 0;
       const allVerKeys = new Set();
@@ -7948,12 +7991,7 @@ function computeInsightsFromData(){
       if (STATE.cmpA) allVerKeys.add(STATE.cmpA);
       if (STATE.cmpB) allVerKeys.add(STATE.cmpB);
       for (const vk of allVerKeys){
-        const fcm = (acct.forecasts_by_company||{})[vk]||{};
-        if (effCo && effCo.size > 0){
-          effCo.forEach(co => { const arr = fcm[co]; if (arr) tot += (arr[checkFm-1]||0); });
-        } else {
-          Object.values(fcm).forEach(arr => { if (arr) tot += (arr[checkFm-1]||0); });
-        }
+        tot = sumCoMapCur((acct.forecasts_by_company||{})[vk]||{}, fyFromVerKey(vk), effCo, null)[checkFm-1];
         if (Math.abs(tot) > 1) return tot;
       }
       return tot;
@@ -9657,8 +9695,8 @@ function ovRefreshBody(){
   const allActM = new Array(12).fill(0), allFcM = new Array(12).fill(0);
   (data.accounts||[]).forEach(a => {
     if (!ovIsOpex(a)) return;
-    const am = ovAcctMonthly(a, fy, 'actual', null);
-    const fm = ovAcctMonthly(a, fy, 'forecast', verKey);
+    const am = ovAcctMonthly(a, fy, 'actual', null, data);
+    const fm = ovAcctMonthly(a, fy, 'forecast', verKey, data);
     am.forEach((v,i)=>allActM[i]+=v); fm.forEach((v,i)=>allFcM[i]+=v);
   });
   const allBlended = ovBlend(allActM, allFcM, throughFm);
@@ -9826,10 +9864,10 @@ function ovRefreshBody(){
       if (OV_EXCLUDE_ACCTS.has(String(ra).replace(/C$/i,'')) || OV_EXCLUDE_ACCTS.has(ra)) return;
       if (OV_EXCLUDE_CATS.has(a.category||'')) return;
       if (OV_MARGIN_PFX.some(p => String(ra).replace(/C$/i,'').startsWith(p))) return;
-      const cm = (a.actuals_by_company||{})[fy]||{};
-      const fcm = (a.forecasts_by_company||{})[verKey]||{};
-      function _gl(cfm){ let t=0; Object.values(cm).forEach(arr=>{if(arr)t+=(arr[cfm-1]||0);}); return t; }
-      function _fc(cfm){ let t=0; Object.values(fcm).forEach(arr=>{if(arr)t+=(arr[cfm-1]||0);}); return t; }
+      const _glM = sumCoMapCur((a.actuals_by_company||{})[fy]||{}, fy, null, data);
+      const _fcM = sumCoMapCur((a.forecasts_by_company||{})[verKey]||{}, fy, null, data);
+      function _gl(cfm){ return _glM[cfm-1]; }
+      function _fc(cfm){ return _fcM[cfm-1]; }
       const act = _gl(throughFm), fc = _fc(throughFm);
       // Missing accrual: forecast > $100 but GL = $0, AND had actuals in at least 1 prior month
       if (Math.abs(fc) > 100 && Math.abs(act) < 1){
@@ -9882,10 +9920,9 @@ function ovRefreshBody(){
       if (!ovIsOpex(a)) return;
       const cat = (typeof ovEffectiveCat==='function'?ovEffectiveCat(a):a.category)||'Other';
       function regionSum(src, vk){
-        let tot=0;
         const bucket = src==='actual'?(a.actuals_by_company||{})[fy]||{}:(a.forecasts_by_company||{})[vk]||{};
-        coSet.forEach(co => { const arr=bucket[co]; if(arr) tot+=(arr[throughFm-1]||0); });
-        return tot;
+        const cfy = src==='actual' ? fy : fyFromVerKey(vk);
+        return sumCoMapCur(bucket, cfy, coSet, data)[throughFm-1];
       }
       if (!byCat[cat]) byCat[cat] = { cat, actual: 0, forecast: 0 };
       byCat[cat].actual += regionSum('actual',null);
@@ -9960,8 +9997,8 @@ function ovRefreshBody(){
     const accts = cats[cat];
     const actM = new Array(12).fill(0), fcM = new Array(12).fill(0);
     accts.forEach(a => {
-      const am = ovAcctMonthly(a, fy, 'actual', null);
-      const fm = ovAcctMonthly(a, fy, 'forecast', verKey);
+      const am = ovAcctMonthly(a, fy, 'actual', null, data);
+      const fm = ovAcctMonthly(a, fy, 'forecast', verKey, data);
       am.forEach((v,i)=>actM[i]+=v); fm.forEach((v,i)=>fcM[i]+=v);
     });
     actM.forEach((v,i)=>grandActM[i]+=v);
@@ -9982,13 +10019,13 @@ function ovRefreshBody(){
 
     if (isOpen){
       accts.sort((a,b)=>{
-        const at=ovAcctMonthly(a,fy,'actual',null).reduce((s,v)=>s+v,0);
-        const bt=ovAcctMonthly(b,fy,'actual',null).reduce((s,v)=>s+v,0);
+        const at=ovAcctMonthly(a,fy,'actual',null,data).reduce((s,v)=>s+v,0);
+        const bt=ovAcctMonthly(b,fy,'actual',null,data).reduce((s,v)=>s+v,0);
         return bt-at;
       }).forEach(a => {
         const ra = a.reporting_account;
-        const am = ovAcctMonthly(a, fy, 'actual', null);
-        const fm = ovAcctMonthly(a, fy, 'forecast', verKey);
+        const am = ovAcctMonthly(a, fy, 'actual', null, data);
+        const fm = ovAcctMonthly(a, fy, 'forecast', verKey, data);
         const bl = ovBlend(am, fm, throughFm);
         const bt = bl.reduce((s,v)=>s+v,0);
         const ft = fm.reduce((s,v)=>s+v,0);
@@ -10043,8 +10080,8 @@ function ovRefreshBody(){
     // Total software actuals & forecast (from actuals_by_company / forecasts_by_company)
     const swActM = new Array(12).fill(0), swFcM = new Array(12).fill(0);
     swAccts.forEach(a => {
-      ovAcctMonthly(a,fy,'actual',null).forEach((v,i)=>swActM[i]+=v);
-      ovAcctMonthly(a,fy,'forecast',verKey).forEach((v,i)=>swFcM[i]+=v);
+      ovAcctMonthly(a,fy,'actual',null,data).forEach((v,i)=>swActM[i]+=v);
+      ovAcctMonthly(a,fy,'forecast',verKey,data).forEach((v,i)=>swFcM[i]+=v);
     });
     const swActTot = swActM.reduce((s,v)=>s+v,0);
 
@@ -10061,8 +10098,11 @@ function ovRefreshBody(){
         if (l.fm + sched - 1 > 12) {
           const spillMonths = (l.fm + sched - 1) - 12;
           const perMonth = (l.amount || 0) / sched;
+          const _co = fcLineCo(l);
           for (let m = 0; m < spillMonths && m < 12; m++) {
-            swFcM[m] += perMonth;
+            let pm = perMonth;
+            if (STATE.currency === 'USD' && l.source !== 'RPT_FORECAST_DETAIL'){ const r = fxRate(_co, fy, m+1, data); pm = r ? pm/r : pm; }
+            swFcM[m] += pm;
           }
         }
       });
@@ -10088,7 +10128,7 @@ function ovRefreshBody(){
           cat.monthly[d.fm-1] += (d.amount || 0);
         });
       } else {
-        const am = ovAcctMonthly(a, fy, 'actual', null);
+        const am = ovAcctMonthly(a, fy, 'actual', null, data);
         const cat = ensSwCat('Other', '#75797D');
         am.forEach((v,i) => cat.monthly[i] += v);
       }
@@ -10224,8 +10264,8 @@ function ovRenderCharts(verKey, fy){
       if (!ovIsOpex(a)) return;
       const cat = typeof ovEffectiveCat === 'function' ? ovEffectiveCat(a) : (a.category || '');
       if (cat !== 'Salaries & Wages' && cat !== 'Contract Labor') return;
-      const am = ovAcctMonthly(a, fy, 'actual', null);
-      const fm = ovAcctMonthly(a, fy, 'forecast', verKey);
+      const am = ovAcctMonthly(a, fy, 'actual', null, data);
+      const fm = ovAcctMonthly(a, fy, 'forecast', verKey, data);
       if (cat === 'Salaries & Wages'){ am.forEach((v,i) => swM[i] += v); fm.forEach((v,i) => swFcM[i] += v); }
       else { am.forEach((v,i) => clM[i] += v); fm.forEach((v,i) => clFcM[i] += v); }
     });
@@ -12044,8 +12084,8 @@ function computeTopVariances(data, fy, verKey, throughFm, ovView, limit){
   (data.accounts||[]).forEach(a => {
     if (typeof ovIsOpex === 'function' && !ovIsOpex(a)) return;
     const cat = (typeof ovEffectiveCat === 'function' ? ovEffectiveCat(a) : a.category) || 'Other';
-    const am = typeof ovAcctMonthly === 'function' ? ovAcctMonthly(a, fy, 'actual', null) : new Array(12).fill(0);
-    const fm = typeof ovAcctMonthly === 'function' ? ovAcctMonthly(a, fy, 'forecast', verKey) : new Array(12).fill(0);
+    const am = typeof ovAcctMonthly === 'function' ? ovAcctMonthly(a, fy, 'actual', null, data) : new Array(12).fill(0);
+    const fm = typeof ovAcctMonthly === 'function' ? ovAcctMonthly(a, fy, 'forecast', verKey, data) : new Array(12).fill(0);
     if (!byCat[cat]) byCat[cat] = { cat, actual: 0, forecast: 0 };
     let actual, forecast;
     if (ovView === 'MONTH'){
@@ -12634,15 +12674,11 @@ function generateMcSlideDeck(fm, fy, verKey){
 
   function sdAcctMonth(acct, companies, fyear, src, vKey){
     const compSet = new Set(companies.map(String));
-    let total = 0;
     const cm = src === 'actual'
       ? ((acct.actuals_by_company || {})[String(fyear)] || {})
       : ((acct.forecasts_by_company || {})[vKey] || {});
-    Object.entries(cm).forEach(([co, arr]) => {
-      if(!compSet.has(String(co))) return;
-      total += (arr[fm-1] || 0);
-    });
-    return total;
+    const cfy = src === 'actual' ? fyear : fyFromVerKey(vKey);
+    return sumCoMapCur(cm, cfy, compSet, data)[fm-1];
   }
 
   const SLIDE_REGIONS = [
