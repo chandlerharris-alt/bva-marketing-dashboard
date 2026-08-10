@@ -867,13 +867,13 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
         <button data-v="LOCAL">Local</button>
       </div>
     </div>
-    <div class="field" id="revsrc-field" style="display:none" title="Two DIFFERENT revenue definitions — they will NOT reconcile with each other. Sales Orders = gross hardware order value at ship (the same basis the AOP plan is built on; use this to compare to AOP). Adaptive P&amp;L = recognized NET revenue incl. subscription — structurally lower (e.g. US DTC ~15% below the orders-based AOP due to promos/returns/recognition timing).">
+    <div class="field" id="revsrc-field" style="display:none" title="GL Actuals = recognized revenue from the combined GL (GLOBAL_COMBINED_GL, REPORTING_COMPANY), the same source as the rest of the dashboard's actuals. Sales Orders = gross hardware order value at ship (T360), current within days of ship but not net of returns/recognition and hardware-only. They measure different things and will not fully reconcile.">
       <label>Revenue Source</label>
       <div class="pill-group" id="revsrc-toggle">
-        <button data-v="adaptive" class="active">Adaptive P&amp;L (recognized)</button>
-        <button data-v="t360">Sales Orders (gross)</button>
+        <button data-v="adaptive" class="active">GL Actuals</button>
+        <button data-v="t360">Sales Orders</button>
       </div>
-      <div style="font-size:10px;color:#8a6d3b;margin-top:4px;max-width:230px;line-height:1.35">⚠ Different bases — won't reconcile. <b>Sales Orders</b> = gross orders (AOP basis). <b>Adaptive P&amp;L</b> = recognized net (incl. subscription), runs lower.</div>
+      <div style="font-size:10px;color:#8a6d3b;margin-top:4px;max-width:230px;line-height:1.35">⚠ Different sources — won't fully reconcile. <b>GL Actuals</b> = combined-GL recognized revenue. <b>Sales Orders</b> = gross hardware orders (T360).</div>
     </div>
     <div class="field" title="Restate the financials as if every open reclass suggestion had actually been posted.">
       <label>Reclass</label>

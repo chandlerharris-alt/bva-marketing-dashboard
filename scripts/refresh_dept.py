@@ -353,11 +353,12 @@ def main():
         rft_versions = sorted({r["version"] for r in rft_rows if r.get("version")})
         print(f"  RPT versions discovered: {rft_versions}")
 
-    # ADAPTIVE_GL_PL_ACTUALS recognized revenue (USD, incl subscription channels)
+    # GL revenue from GLOBAL_COMBINED_GL (REPORTING_COMPANY, local ccy — FX'd per company
+    # client-side), scoped to the explicit REPORTING_ACCOUNT revenue list in revenue_gl_pl.sql
     gl_pl_rev: list[dict] = []
     if getattr(args, "load_gl_pl_revenue", False):
         gl_pl_rev = fetch(cur, load_sql("revenue_gl_pl.sql").format(fy_min=args.fy_min, fy_max=args.fy_max),
-                          "GL_PL revenue (ADAPTIVE_GL_PL_ACTUALS)")
+                          "GL revenue (GLOBAL_COMBINED_GL)")
 
     # T360_GLOBAL_SALES_ORDERS — alternate revenue source for open (not-yet-closed) periods
     t360_rev: list[dict] = []
