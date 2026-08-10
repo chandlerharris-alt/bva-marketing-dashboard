@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-10T15:36:38.593Z",
+  "_saved_at": "2026-08-10T15:38:11.794Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -22,6 +22,27 @@
       "note": "This is a tool that the DTC team is using for site testing. Should hit Nicolas' budget.",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-10T15:36:38.593Z"
+    },
+    "rc-1786376291417-12": {
+      "id": "rc-1786376291417-12",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "stratech global - location totem - 3t2026",
+      "display_snapshot": "STRATECH GLOBAL - LOCATION TOTEM - 3T2026",
+      "amount_snapshot": 10181.21,
+      "to_account": "6740000",
+      "to_account_name": null,
+      "to_department": "75",
+      "to_company": "41",
+      "to_tag_id": "uc-1786376291417-858",
+      "note": "Should go here: Distributors - Awareness Marketing (TOFU, events)",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-10T15:38:11.794Z"
     }
   }
 }
