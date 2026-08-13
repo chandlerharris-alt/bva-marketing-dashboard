@@ -4478,14 +4478,17 @@ function computeDrill(a){
     if (!coOk(d.source_company)) return; if (!chOk(d.channel)) return; if (!inPeriod(d.fm)) return;
     const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
     const k = normKey(display) || 'unknown';
+    const inv = (d.invoice != null && String(d.invoice).trim()) ? String(d.invoice).trim() : null;
     if (d.fy===STATE.fy){
-      const bucket = (actAgg[k] = actAgg[k] || {display, amount:0, txnTypes:new Set()});
+      const bucket = (actAgg[k] = actAgg[k] || {display, amount:0, txnTypes:new Set(), invoices:new Set()});
       bucket.amount += drillLineCur(d);
       if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
+      if (inv) bucket.invoices.add(inv);
     } else if (d.fy===STATE.fy-1){
-      const bucket = (pyAgg[k] = pyAgg[k] || {display, amount:0, txnTypes:new Set()});
+      const bucket = (pyAgg[k] = pyAgg[k] || {display, amount:0, txnTypes:new Set(), invoices:new Set()});
       bucket.amount += drillLineCur(d);
       if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
+      if (inv) bucket.invoices.add(inv);
     }
   });
   const fcAgg={};
@@ -4517,9 +4520,9 @@ function computeDrill(a){
     c.buckets[src].push(Object.assign({display, amount}, extra || {}));
     c[src] += amount; c.count++;
   };
-  Object.values(pyAgg).forEach(x => addTxn('py', x.display, x.amount, {txnTypes:x.txnTypes}));
+  Object.values(pyAgg).forEach(x => addTxn('py', x.display, x.amount, {txnTypes:x.txnTypes, invoices:x.invoices}));
   Object.values(fcAgg).forEach(x => addTxn('plan', x.display, x.amount, {expType:x.expense_type||'', isAmort:x._amortized||false}));
-  Object.values(actAgg).forEach(x => addTxn('actual', x.display, x.amount, {txnTypes:x.txnTypes}));
+  Object.values(actAgg).forEach(x => addTxn('actual', x.display, x.amount, {txnTypes:x.txnTypes, invoices:x.invoices}));
   // Within each bucket order the transactions greatest -> least by magnitude.
   Object.values(catMap).forEach(c => ['py','plan','actual'].forEach(s => c.buckets[s].sort((x,y) => Math.abs(y.amount) - Math.abs(x.amount))));
   const cats = Object.values(catMap).sort((x,y) => {
@@ -4694,6 +4697,27 @@ function reclassBtnHtml(ra, display, amount){
   const escPayload = payload.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   return ` <span class="reclass-btn" data-rc-ctx="${escPayload}" onclick="event.stopPropagation(); openReclassModal(this)">Suggest Reclass</span>`;
 }
+// Clickable "Invoices (N)" tag on a transaction line. Invoice #s only exist on invoice-type GL txns,
+// so this decorates just invoice lines. Click toggles an inline list of ALL invoice numbers below the
+// vendor (a vendor line aggregates the period, so it can carry several).
+function drillInvChip(invoices){
+  if (!invoices || !invoices.size) return '';
+  const n = invoices.size;
+  return ` <span class="drill-inv-toggle" onclick="event.stopPropagation();toggleDrillInvList(this)" title="Show/hide invoice numbers" style="margin-left:6px;cursor:pointer;font-size:10px;font-weight:600;color:#015047;background:#e6f2ef;border:1px solid #b9dedb;border-radius:9px;padding:1px 8px;white-space:nowrap">${n===1?'Invoice':'Invoices'} (${n}) <span class="dic">&#9656;</span></span>`;
+}
+function drillInvList(invoices){
+  if (!invoices || !invoices.size) return '';
+  const chips = Array.from(invoices).filter(Boolean)
+    .map(x => `<span style="display:inline-block;background:#f0f4f8;border:1px solid var(--gray-200);border-radius:5px;padding:1px 7px;margin:0 5px 5px 0">#${String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`).join('');
+  return `<div class="drill-inv-list" style="display:none;margin-top:5px;color:var(--navy);font-size:10.5px;font-variant-numeric:tabular-nums;line-height:1.7;max-width:640px;white-space:normal">${chips}</div>`;
+}
+function toggleDrillInvList(el){
+  const cell = el.closest('td'); if (!cell) return;
+  const list = cell.querySelector('.drill-inv-list'); if (!list) return;
+  const open = (list.style.display === 'none' || !list.style.display);
+  list.style.display = open ? 'block' : 'none';
+  const ic = el.querySelector('.dic'); if (ic) ic.innerHTML = open ? '&#9662;' : '&#9656;';
+}
 function drillTxnRowHTML(a, c, src, t, isRev, parentCat){
   const dsp = String(t.display).replace(/</g,'&lt;');
   const idAttr = String(c.id).replace(/"/g,'&quot;');
@@ -4702,8 +4726,10 @@ function drillTxnRowHTML(a, c, src, t, isRev, parentCat){
   cells[src] = (src==='actual') ? `<strong>${fmtUSD(t.amount)}</strong>` : fmtUSD(t.amount);
   const rcBtn = (src==='actual') ? reclassBtnHtml(a.reporting_account, t.display, t.amount) : '';
   const ttChip = txnTypeChipHtml(t.txnTypes);
+  const invChip = drillInvChip(t.invoices);
+  const invList = drillInvList(t.invoices);
   return `<tr class="drill-txn-row" data-acct="${a.reporting_account}" data-catid="${idAttr}" data-src="${src}" data-parent-cat="${parentCat}" style="display:none;background:#f4f8fd;font-size:11.5px">
-    <td style="padding-left:84px">${dsp}${typePill}${ttChip} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}${rcBtn}</td>
+    <td style="padding-left:84px">${dsp}${typePill}${ttChip}${invChip} ${ucChipHtml(ACTIVE_SLUG, t.display, a.reporting_account)}${rcBtn}${invList}</td>
     <td class="num section-val">${cells.py}</td>
     <td class="num section-val">${cells.plan}</td>
     <td class="num section-val">${cells.actual}</td>
