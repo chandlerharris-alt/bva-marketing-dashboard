@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-13T19:22:43.579Z",
+  "_last_updated": "2026-08-13T19:23:56.108Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -102,6 +102,11 @@
       "id": "uc-1786648927600-440",
       "name": "PR",
       "color": "#e9d5ff"
+    },
+    {
+      "id": "uc-1786648988526-889",
+      "name": "B2B Commercial",
+      "color": "#fde68a"
     }
   ],
   "descToCategory": {},
@@ -156,6 +161,10 @@
       "sioudan yannis - juin 2026": "uc-1786648927600-440",
       "sioudan yannis - juillet 2026": "uc-1786648927600-440",
       "josephine adjagbenon - juillet 2026": "uc-1786648927600-440"
+    },
+    "6747000": {
+      "tcl": "uc-1786648988526-889",
+      "bodymedia": "uc-1786648988526-889"
     },
     "6763000": {
       "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
