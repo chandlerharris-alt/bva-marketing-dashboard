@@ -1,6 +1,6 @@
 {
-  "_last_updated": "2026-07-10T21:51:21.540Z",
-  "_last_updated_by": "megan.bitton@ifit.com",
+  "_last_updated": "2026-08-13T19:22:43.579Z",
+  "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
     {
@@ -82,6 +82,26 @@
       "id": "uc-1783715562380-608",
       "name": "Paid Search",
       "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1786648424708-907",
+      "name": "Event",
+      "color": "#a5f3fc"
+    },
+    {
+      "id": "uc-1786648605492-184",
+      "name": "Retail",
+      "color": "#fecaca"
+    },
+    {
+      "id": "uc-1786648878155-760",
+      "name": "DTC",
+      "color": "#d9f99d"
+    },
+    {
+      "id": "uc-1786648927600-440",
+      "name": "PR",
+      "color": "#e9d5ff"
     }
   ],
   "descToCategory": {},
@@ -98,11 +118,44 @@
       "seo": "uc-1783704347296-160",
       "subs advertising": "uc-1783704759263-940",
       "non-brand paid search": "uc-1783715562380-608",
-      "brand paid search": "uc-1783715562380-608"
+      "brand paid search": "uc-1783715562380-608",
+      "rx france - salon reeduca septembre 2026": "uc-1786648424708-907",
+      "google ireland limited": "uc-1783715562380-608",
+      "reddit netherlands  - juillet 2026": "uc-1783715562380-608",
+      "gizelle - valentin charles": "uc-1783704279044-378",
+      "gizelle - marc mestre": "uc-1783704279044-378",
+      "studio grip socks -lancement pilate": "uc-1786648424708-907",
+      "fitneat - collab influence": "uc-1783704279044-378",
+      "studio grip socks - 300 pairs chaussette": "uc-1786648424708-907",
+      "emma huffam - trainer ultra 1 reformer": "uc-1786648424708-907",
+      "moritz fiebig - mai 2026": "uc-1783704279044-378",
+      "gizelle - dafa traore": "uc-1783704279044-378",
+      "gizelle - cameron valliere": "uc-1783704279044-378",
+      "minerva neon - transport totem": "uc-1786648605492-184",
+      "elisabeth loncke - evenement reformer": "uc-1786648424708-907",
+      "elisabeth loncke - mise en valeur de la marque": "uc-1786648424708-907",
+      "pgz performance - com tapis 2450": "uc-1783704279044-378",
+      "os performance - expenses fitshop shooting": "uc-1786648605492-184",
+      "flixmedia limited - septup fee - expansion es & pt": "uc-1786648605492-184"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
-      "us + can - pilates ott": "uc-1783704781602-630"
+      "us + can - pilates ott": "uc-1783704781602-630",
+      "studio grip socks -lancement pilate (reclassed)": "uc-1786648424708-907",
+      "gt fitness - montage - reformer event - fomo berlin": "uc-1786648424708-907",
+      "bruno martin - videaste evenement ultra 1 reformer": "uc-1786648424708-907",
+      "johanna paulina richter - evenement pilate berlin 07/07": "uc-1786648424708-907",
+      "nicole ogechikama hall - coach pilate event berlin - june 20 (reclassed)": "uc-1786648424708-907",
+      "lara kutsch - deplacement evenement pilate berlin (reclassed)": "uc-1786648424708-907",
+      "filmsbyben - majorca april 2026": "uc-1786648424708-907",
+      "kameleoon - 15/06/2026 au 30/09/2026": "uc-1786648878155-760",
+      "kameleoon - 15/06/2026 to 30/09/2026": "uc-1786648878155-760",
+      "stratech global - location totem - 3t2026 (reclassed)": "uc-1786648605492-184",
+      "javel entertainment - lancement ultra 1 reformer": "uc-1786648424708-907",
+      "josephine adjagbenon - juin 2026": "uc-1786648927600-440",
+      "sioudan yannis - juin 2026": "uc-1786648927600-440",
+      "sioudan yannis - juillet 2026": "uc-1786648927600-440",
+      "josephine adjagbenon - juillet 2026": "uc-1786648927600-440"
     },
     "6763000": {
       "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
