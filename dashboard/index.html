@@ -2276,6 +2276,15 @@ function fcLineCo(l){
   if (l.level_code != null && String(l.level_code).trim() !== '') return String(parseInt(l.level_code,10));
   return '';
 }
+// Convert one ACTUALS drill/transaction line (a.drill[]) to display currency. Each line's
+// amount is PL_TOTAL in its source company's local currency, so divide by fxRate(company)
+// in USD mode — same convention as actuals_by_company. No-op in Local mode.
+function drillLineCur(d){
+  const amt = d.amount || 0;
+  if (STATE.currency !== 'USD') return amt;
+  const r = fxRate(d.source_company, d.fy, d.fm);
+  return r ? amt / r : amt;
+}
 // ===============================================================================
 
 // Channel + company scoped actuals, summed DIRECTLY from actuals_by_channel_company
@@ -4301,11 +4310,11 @@ function expansionHTML(a){
     const k = normKey(display) || 'unknown';
     if (d.fy === STATE.fy){
       if (!actAgg[k]) actAgg[k] = {key:k, display, amount:0, txnTypes:new Set()};
-      actAgg[k].amount += d.amount;
+      actAgg[k].amount += drillLineCur(d);
       if (d.transaction_type) actAgg[k].txnTypes.add(d.transaction_type);
     } else if (d.fy === STATE.fy - 1){
       if (!pyAgg[k]) pyAgg[k] = {key:k, display, amount:0};
-      pyAgg[k].amount += d.amount;
+      pyAgg[k].amount += drillLineCur(d);
     }
   });
 
@@ -4329,7 +4338,7 @@ function expansionHTML(a){
       const k = normKey(display) || 'unspecified';
       const target = (cmpVer === STATE.cmpA) ? fcAggA : fcAggB;
       if (!target[k]) target[k] = {key:k, display, amount:0, expense_type: l.expense_type||'', _amortized: l._amortized||false};
-      target[k].amount += (l.amount || 0);
+      target[k].amount += fcLineCur(l, fcLineCo(l), l.fy, null);
     });
   });
 
@@ -4471,11 +4480,11 @@ function computeDrill(a){
     const k = normKey(display) || 'unknown';
     if (d.fy===STATE.fy){
       const bucket = (actAgg[k] = actAgg[k] || {display, amount:0, txnTypes:new Set()});
-      bucket.amount += d.amount;
+      bucket.amount += drillLineCur(d);
       if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
     } else if (d.fy===STATE.fy-1){
       const bucket = (pyAgg[k] = pyAgg[k] || {display, amount:0, txnTypes:new Set()});
-      bucket.amount += d.amount;
+      bucket.amount += drillLineCur(d);
       if (d.transaction_type) bucket.txnTypes.add(d.transaction_type);
     }
   });
@@ -4489,7 +4498,7 @@ function computeDrill(a){
     if (!chOk(l.channel)) return;
     const display = l.description || l.vendor || 'Unspecified'; const k = normKey(display) || 'unspecified';
     if (!fcAgg[k]) fcAgg[k] = {display, amount:0, expense_type:l.expense_type||'', _amortized:l._amortized||false};
-    fcAgg[k].amount += (l.amount || 0);
+    fcAgg[k].amount += fcLineCur(l, fcLineCo(l), l.fy, null);
   });
   // Split into three source buckets (PY / Plan / Actual) rather than merging each vendor into a
   // single row. Every transaction keeps its own single amount; a vendor that appears in more than
@@ -9512,14 +9521,14 @@ function getUntaggedDrillRowsForMonth(fy, fm){
       if (effCo && effCo.size > 0){ const co = String(d.company || d.level_code || ''); if (co && !effCo.has(co)) return; }
       const display = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
       if (ucGetCategoryForDescAcct(slug, display, acctNum)) return;
-      rows.push({ account: acctNum, accountName: acctName, glCategory: acctCat, source: 'actual', display, amount: d.amount });
+      rows.push({ account: acctNum, accountName: acctName, glCategory: acctCat, source: 'actual', display, amount: drillLineCur(d) });
     });
     (acct.forecast_lines || []).forEach(l => {
       if (l.version !== ver || l.fy !== fy || l.fm !== fm) return;
       if (effCo && effCo.size > 0){ const co = String(l.level_code || '').replace(/^0+/,''); if (co && !effCo.has(co)) return; }
       const display = l.description || l.vendor || 'Unspecified';
       if (ucGetCategoryForDescAcct(slug, display, acctNum)) return;
-      rows.push({ account: acctNum, accountName: acctName, glCategory: acctCat, source: 'forecast', display, amount: l.amount || 0 });
+      rows.push({ account: acctNum, accountName: acctName, glCategory: acctCat, source: 'forecast', display, amount: fcLineCur(l, fcLineCo(l), l.fy, null) });
     });
   });
   const agg = {};
@@ -10126,7 +10135,7 @@ function ovRefreshBody(){
           const desc = d.vendor || d.customer || (d.comments ? d.comments.slice(0,60) : 'Unknown');
           const uc = typeof ucGetCategoryForDescAcct === 'function' ? ucGetCategoryForDescAcct('marketing', desc, ra) : null;
           const cat = uc ? ensSwCat(uc.name, uc.color || '#01323C') : ensSwCat('Other', '#75797D');
-          cat.monthly[d.fm-1] += (d.amount || 0);
+          cat.monthly[d.fm-1] += drillLineCur(d);
         });
       } else {
         const am = ovAcctMonthly(a, fy, 'actual', null, data);
