@@ -1,6 +1,6 @@
 {
   "_saved_by": "michael.doran@ifit.com",
-  "_saved_at": "2026-08-13T19:10:31.517Z",
+  "_saved_at": "2026-08-13T19:34:37.395Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -15,7 +15,15 @@
       "fm": 7,
       "amount": 34,
       "expense_type": "Expense",
-      "source": "PLANNING_GENERAL"
+      "source": "PLANNING_GENERAL",
+      "cellEdits": {
+        "3": 35000,
+        "4": 35000,
+        "5": 35000,
+        "6": 35000,
+        "7": 0,
+        "8": 0
+      }
     }
   ],
   "removed": [],
