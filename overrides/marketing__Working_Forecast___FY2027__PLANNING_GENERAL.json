@@ -1,10 +1,23 @@
 {
   "_saved_by": "michael.doran@ifit.com",
-  "_saved_at": "2026-08-13T18:50:33.535Z",
+  "_saved_at": "2026-08-13T19:10:31.517Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
-  "added": [],
+  "added": [
+    {
+      "id": "added-1786648176908-6",
+      "description": "CRM - Iterable Implementation",
+      "account": "7865000",
+      "vendor": "Mammoth / Growth Bench",
+      "notes": "4 month implementation support",
+      "fy": 2027,
+      "fm": 7,
+      "amount": 34,
+      "expense_type": "Expense",
+      "source": "PLANNING_GENERAL"
+    }
+  ],
   "removed": [],
   "edited": {
     "PLANNING_GENERAL|SKAI (Kenshoo)|Skai|8941000": {
