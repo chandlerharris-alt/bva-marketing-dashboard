@@ -7543,6 +7543,10 @@ function applyTopVarCollapse(){
 }
 function renderBvaVariances(){
   const card = document.getElementById('bva-variances-card');
+  // Top Variances section removed for now (per Chandler 2026-08-13). Hide on every tab and
+  // skip rendering. To restore: delete the next two lines.
+  if (card) card.style.display = 'none';
+  return;
   if (!card || !DATA || !DATA.accounts) { if (card) card.style.display='none'; return; }
 
   const fm = STATE.month || 12;
@@ -9946,7 +9950,9 @@ function ovRefreshBody(){
     regionVarData.push({ id: sec.id, label: sec.label, top: vars.slice(0,5) });
   });
 
-  const hasAnyRegionVars = regionVarData.some(r => r.top.length > 0);
+  // Top Variances by Region section removed for now (per Chandler 2026-08-13). To restore:
+  // change the line below back to `regionVarData.some(r => r.top.length > 0)`.
+  const hasAnyRegionVars = false;
   if (hasAnyRegionVars){
     h.push(`<div class="var-card" style="margin-top:14px"><div class="card-h">Top Variances by Region — ${FM[throughFm]} vs ${verShort}<span class="meta">By category · comments from BvA tab</span></div>`);
     regionVarData.forEach(reg => {
