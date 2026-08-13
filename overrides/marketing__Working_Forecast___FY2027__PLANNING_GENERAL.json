@@ -1,6 +1,6 @@
 {
-  "_saved_by": "chandler.harris@ifit.com",
-  "_saved_at": "2026-08-05T16:16:23.181Z",
+  "_saved_by": "michael.doran@ifit.com",
+  "_saved_at": "2026-08-13T18:50:33.535Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -32,7 +32,18 @@
       "spreads": []
     },
     "PLANNING_GENERAL|CRM - Marketing Cloud software||7865000": {
-      "cellEdits": {},
+      "cellEdits": {
+        "2": 113060.75,
+        "3": 113060.75,
+        "4": 113060.75,
+        "5": 113060.75,
+        "6": 113060.75,
+        "7": 113060.75,
+        "8": 113060.75,
+        "9": 113060.75,
+        "10": 113060.75,
+        "11": 113060.75
+      },
       "spreads": []
     },
     "PLANNING_GENERAL|TrueGroup||7855000": {
