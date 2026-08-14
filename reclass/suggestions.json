@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T15:54:43.893Z",
+  "_saved_at": "2026-08-14T15:55:44.235Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -211,6 +211,27 @@
       "note": "Distributors - Wholesale Co-marketing (excluding Amazon)",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T15:54:43.893Z"
+    },
+    "rc-1786722943778-743": {
+      "id": "rc-1786722943778-743",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "confianza online",
+      "display_snapshot": "CONFIANZA ONLINE",
+      "amount_snapshot": 543.3675979034018,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "070",
+      "to_company": "41",
+      "to_tag_id": "uc-1786648605492-184",
+      "note": "Distributors - Wholesale Co-marketing (excluding Amazon)",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T15:55:44.235Z"
     }
   }
 }
