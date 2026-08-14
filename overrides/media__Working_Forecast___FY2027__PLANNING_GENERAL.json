@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T19:48:28.995Z",
+  "_saved_at": "2026-08-14T20:57:04.626Z",
   "slug": "media",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -103,6 +103,18 @@
         "10": 12788.98,
         "11": 12788.98
       }
+    },
+    {
+      "id": "added-1786741022036-5",
+      "description": "Wholesale Co-marketing (excluding Amazon)",
+      "account": "6736000",
+      "vendor": "Winning Appliance",
+      "notes": "AUD",
+      "fy": 2027,
+      "fm": 6,
+      "amount": 5000,
+      "expense_type": "Expense",
+      "source": "PLANNING_GENERAL"
     }
   ],
   "removed": [],
