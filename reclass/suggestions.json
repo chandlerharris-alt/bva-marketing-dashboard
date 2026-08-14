@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T16:54:59.449Z",
+  "_saved_at": "2026-08-14T16:55:48.751Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -400,6 +400,27 @@
       "note": "Event Agency (USA)",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T16:54:59.449Z"
+    },
+    "rc-1786726548544-290": {
+      "id": "rc-1786726548544-290",
+      "slug": "media",
+      "from_account": "6740000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "interlux accrual",
+      "display_snapshot": "INTERLUX ACCRUAL",
+      "amount_snapshot": -160500,
+      "to_account": "6747000",
+      "to_account_name": null,
+      "to_department": "075",
+      "to_company": "11",
+      "to_tag_id": "uc-1786648424708-907",
+      "note": "Event Agency (USA)",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T16:55:48.751Z"
     }
   }
 }
