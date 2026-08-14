@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-14T16:56:36.108Z",
+  "_last_updated": "2026-08-14T17:04:55.411Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -122,6 +122,11 @@
       "id": "uc-1786723732705-84",
       "name": "Amazon",
       "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1786726665560-342",
+      "name": "Software",
+      "color": "#ddd6fe"
     }
   ],
   "descToCategory": {},
@@ -190,7 +195,28 @@
       "59018   alyna rost": "uc-1783704279044-378",
       "59018   alyna rost (reclassed)": "uc-1783704279044-378",
       "59156    body by berner": "uc-1783704279044-378",
-      "body by berner (reclassed)": "uc-1783704279044-378"
+      "body by berner (reclassed)": "uc-1783704279044-378",
+      "the fashion jogger": "uc-1783704279044-378",
+      "3106   google inc": "uc-1783715562380-608",
+      "celebrity sweat llc": "uc-1783704279044-378",
+      "52382 postie amort": "uc-1783704330013-867",
+      "3101   microsoft": "uc-1783715562380-608",
+      "newton accrual": "uc-1786726665560-342",
+      "doubleverify inc": "uc-1786726665560-342",
+      "51892   meta platforms": "uc-1783704197218-305",
+      "54382   impact tech": "uc-1783704223659-85",
+      "reddit inc.": "uc-1783704197218-305",
+      "3106 google accrual": "uc-1783715562380-608",
+      "52506   reddit inc.": "uc-1783704197218-305",
+      "influencer accrual": "uc-1783704279044-378",
+      "microsoft online lp": "uc-1783715562380-608",
+      "impact tech inc": "uc-1783704223659-85",
+      "the sports creators agenc": "uc-1783704279044-378",
+      "58398   forte sports mana": "uc-1783704279044-378",
+      "the sports creators": "uc-1783704279044-378",
+      "william morris endeavor": "uc-1783704279044-378",
+      "52930   william morris en": "uc-1783704279044-378",
+      "54051 jake ro amort": "uc-1783704279044-378"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
@@ -213,7 +239,9 @@
       "hyprquest - summer campaign": "uc-1786722480628-759",
       "interlux accrual": "uc-1786648424708-907",
       "58896   interluxe group": "uc-1786648424708-907",
-      "scottsdale popup accrual": "uc-1786648424708-907"
+      "scottsdale popup accrual": "uc-1786648424708-907",
+      "ttd reclass": "uc-1783704770063-391",
+      "ttd accrual": "uc-1783704770063-391"
     },
     "6747000": {
       "tcl": "uc-1786648988526-889",
