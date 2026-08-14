@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T17:31:41.000Z",
+  "_saved_at": "2026-08-14T17:31:53.953Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -883,6 +883,27 @@
       "note": "Dept 74, not 75",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T17:31:41.000Z"
+    },
+    "rc-1786728713570-847": {
+      "id": "rc-1786728713570-847",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "54051 jake ro amort",
+      "display_snapshot": "54051 JAKE RO AMORT",
+      "amount_snapshot": 6875,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "40",
+      "to_tag_id": "uc-1783704279044-378",
+      "note": "Dept 74, not 75",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T17:31:53.953Z"
     }
   }
 }
