@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T16:34:49.230Z",
+  "_saved_at": "2026-08-14T16:45:56.718Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -358,6 +358,27 @@
       "note": "Australia, not UK",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T16:34:49.230Z"
+    },
+    "rc-1786725956450-701": {
+      "id": "rc-1786725956450-701",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "dept 74 expenses",
+      "display_snapshot": "DEPT 74 EXPENSES",
+      "amount_snapshot": 2732080.89,
+      "to_account": "4500000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "40",
+      "to_tag_id": "uc-1786648878155-760",
+      "note": "What are these?",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T16:45:56.718Z"
     }
   }
 }
