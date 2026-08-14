@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T18:11:00.340Z",
+  "_saved_at": "2026-08-14T18:12:01.574Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -1135,6 +1135,27 @@
       "note": null,
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T18:11:00.340Z"
+    },
+    "rc-1786731121369-442": {
+      "id": "rc-1786731121369-442",
+      "slug": "media",
+      "from_account": "6740000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "the trade desk (reclassed)",
+      "display_snapshot": "THE TRADE DESK (reclassed)",
+      "amount_snapshot": 484612.31007872545,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "075",
+      "to_company": "11",
+      "to_tag_id": "uc-1783704770063-391",
+      "note": null,
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T18:12:01.574Z"
     }
   }
 }
