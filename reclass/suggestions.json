@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T18:04:17.858Z",
+  "_saved_at": "2026-08-14T18:06:12.447Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -1051,6 +1051,27 @@
       "note": null,
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T18:04:17.858Z"
+    },
+    "rc-1786730772182-372": {
+      "id": "rc-1786730772182-372",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "price observatory",
+      "display_snapshot": "PRICE OBSERVATORY",
+      "amount_snapshot": 3651.4302579108603,
+      "to_account": "4500000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "41",
+      "to_tag_id": null,
+      "note": "DTC, not Marketing",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T18:06:12.447Z"
     }
   }
 }
