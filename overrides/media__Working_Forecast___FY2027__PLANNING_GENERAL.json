@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T18:46:32.322Z",
+  "_saved_at": "2026-08-14T18:47:26.626Z",
   "slug": "media",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -27,7 +27,19 @@
       "fm": 12,
       "amount": 12159.31,
       "expense_type": "Expense",
-      "source": "PLANNING_GENERAL"
+      "source": "PLANNING_GENERAL",
+      "cellEdits": {
+        "1": 12159.31,
+        "2": 12159.31,
+        "3": 12159.31,
+        "4": 12159.31,
+        "5": 12159.31,
+        "6": 12159.31,
+        "7": 12159.31,
+        "8": 12159.31,
+        "9": 12159.31,
+        "10": 12159.31
+      }
     },
     {
       "id": "added-1786732874247-11",
