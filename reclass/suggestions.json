@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T17:06:09.317Z",
+  "_saved_at": "2026-08-14T17:06:31.871Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -505,6 +505,27 @@
       "note": "Dept 74, not 75",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T17:06:09.317Z"
+    },
+    "rc-1786727191711-409": {
+      "id": "rc-1786727191711-409",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "51892 meta platforms i",
+      "display_snapshot": "51892   META PLATFORMS, I",
+      "amount_snapshot": 852136.15,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "40",
+      "to_tag_id": "uc-1783704197218-305",
+      "note": "Dept 74, not 75",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T17:06:31.871Z"
     }
   }
 }
