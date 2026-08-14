@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T17:11:04.371Z",
+  "_saved_at": "2026-08-14T17:11:23.998Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -631,6 +631,27 @@
       "note": "Dept 74, not 75",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T17:11:04.371Z"
+    },
+    "rc-1786727483822-190": {
+      "id": "rc-1786727483822-190",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "52506 reddit",
+      "display_snapshot": "52506   REDDIT INC.",
+      "amount_snapshot": 166600.01999999996,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "40",
+      "to_tag_id": "uc-1783704197218-305",
+      "note": "Dept 74, not 75",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T17:11:23.998Z"
     }
   }
 }
