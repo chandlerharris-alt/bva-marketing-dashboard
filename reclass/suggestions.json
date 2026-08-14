@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T16:28:03.826Z",
+  "_saved_at": "2026-08-14T16:31:49.065Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -295,6 +295,27 @@
       "note": "Australia, not UK",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T16:28:03.826Z"
+    },
+    "rc-1786725108801-199": {
+      "id": "rc-1786725108801-199",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "59018 alyna rost",
+      "display_snapshot": "59018   ALYNA ROST",
+      "amount_snapshot": 2429.2397173753106,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "32",
+      "to_tag_id": "uc-1783704279044-378",
+      "note": "Australia, not UK",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T16:31:49.065Z"
     }
   }
 }
