@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T18:41:16.989Z",
+  "_saved_at": "2026-08-14T18:43:13.762Z",
   "slug": "media",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -38,6 +38,18 @@
       "fy": 2027,
       "fm": 12,
       "amount": 10408.15,
+      "expense_type": "Expense",
+      "source": "PLANNING_GENERAL"
+    },
+    {
+      "id": "added-1786732981683-3",
+      "description": "PR - DE - General",
+      "account": "6747000",
+      "vendor": "Edelman",
+      "notes": "",
+      "fy": 2027,
+      "fm": 4,
+      "amount": 12788.98,
       "expense_type": "Expense",
       "source": "PLANNING_GENERAL"
     }
