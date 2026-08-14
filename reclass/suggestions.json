@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T16:24:55.346Z",
+  "_saved_at": "2026-08-14T16:25:42.932Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -232,6 +232,27 @@
       "note": "Distributors - Wholesale Co-marketing (excluding Amazon)",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T15:55:44.235Z"
+    },
+    "rc-1786724742706-245": {
+      "id": "rc-1786724742706-245",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "facebook australia ptyltd",
+      "display_snapshot": "FACEBOOK AUSTRALIA PTYLTD",
+      "amount_snapshot": 99838.46944016435,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "32",
+      "to_tag_id": "uc-1783704197218-305",
+      "note": "Australia, not UK",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T16:25:42.932Z"
     }
   }
 }
