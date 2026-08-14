@@ -1,6 +1,6 @@
 {
-  "_last_updated": "2026-07-15T16:12:43.713Z",
-  "_last_updated_by": "chandler.harris@ifit.com",
+  "_last_updated": "2026-08-14T16:05:40.714Z",
+  "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "marketing",
   "categories": [
     {
@@ -117,10 +117,25 @@
       "id": "uc-1783705935692-437",
       "name": "Acquia DAM",
       "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1786723431573-552",
+      "name": "Freelancer / Agency",
+      "color": "#fbcfe8"
+    },
+    {
+      "id": "uc-1786723464814-203",
+      "name": "Event",
+      "color": "#ddd6fe"
     }
   ],
   "descToCategory": {},
   "descToCategoryByAcct": {
+    "7855000": {
+      "walktrue ltd": "uc-1786723431573-552",
+      "nacho consultirel000": "uc-1786723431573-552",
+      "52443   ascend staffing": "uc-1786723431573-552"
+    },
     "7865000": {
       "50610 salesfo amort": "uc-1781098665873-905",
       "58257 twilio  amort": "uc-1781098673248-843",
@@ -179,8 +194,18 @@
       "branch": "uc-1781098692041-252",
       "impact tech": "uc-1781098735166-532"
     },
+    "7905000": {
+      "voyagehotels.com - travel to london charlotte + emma": "uc-1786723464814-203"
+    },
     "8941000": {
       "skai (kenshoo)": "uc-1783705889389-855"
+    },
+    "8955000": {
+      "thomas kirkbright": "uc-1786723464814-203"
+    },
+    "8969000": {
+      "transmec uk ltd": "uc-1786723464814-203",
+      "ryder logistics": "uc-1786723464814-203"
     }
   }
 }
