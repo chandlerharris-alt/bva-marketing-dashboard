@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T20:57:04.626Z",
+  "_saved_at": "2026-08-14T20:57:27.342Z",
   "slug": "media",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -114,7 +114,14 @@
       "fm": 6,
       "amount": 5000,
       "expense_type": "Expense",
-      "source": "PLANNING_GENERAL"
+      "source": "PLANNING_GENERAL",
+      "cellEdits": {
+        "0": 5000,
+        "1": 5000,
+        "2": 5000,
+        "3": 5000,
+        "4": 5000
+      }
     }
   ],
   "removed": [],
