@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-14T15:53:55.663Z",
+  "_last_updated": "2026-08-14T15:56:59.914Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -112,6 +112,11 @@
       "id": "uc-1786722480628-759",
       "name": "Partnerships (Paid)",
       "color": "#bfdbfe"
+    },
+    {
+      "id": "uc-1786723007068-140",
+      "name": "reta",
+      "color": "#bbf7d0"
     }
   ],
   "descToCategory": {},
@@ -154,7 +159,8 @@
       "minerva neon - roll up - nencini": "uc-1786648605492-184",
       "confianza online": "uc-1786648605492-184",
       "kameleoon - 15/06/2026 au 30/09/2026": "uc-1786648878155-760",
-      "lara kutsch - deplacement evenement pilate berlin": "uc-1786648424708-907"
+      "lara kutsch - deplacement evenement pilate berlin": "uc-1786648424708-907",
+      "cidi": "uc-1786723007068-140"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
