@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T17:33:05.488Z",
+  "_saved_at": "2026-08-14T17:56:04.124Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -1009,6 +1009,27 @@
       "note": "Dept 74, not 75",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T17:33:05.488Z"
+    },
+    "rc-1786730163860-28": {
+      "id": "rc-1786730163860-28",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "walktrue reclass",
+      "display_snapshot": "WALKTRUE RECLASS",
+      "amount_snapshot": 20130.2,
+      "to_account": "7855000",
+      "to_account_name": "Contract Labor",
+      "to_department": "075",
+      "to_company": "11",
+      "to_tag_id": null,
+      "note": null,
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T17:56:04.124Z"
     }
   }
 }
