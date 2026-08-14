@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-13T19:23:56.108Z",
+  "_last_updated": "2026-08-14T15:50:39.335Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -107,6 +107,11 @@
       "id": "uc-1786648988526-889",
       "name": "B2B Commercial",
       "color": "#fde68a"
+    },
+    {
+      "id": "uc-1786722480628-759",
+      "name": "Partnerships (Paid)",
+      "color": "#bfdbfe"
     }
   ],
   "descToCategory": {},
@@ -160,7 +165,8 @@
       "josephine adjagbenon - juin 2026": "uc-1786648927600-440",
       "sioudan yannis - juin 2026": "uc-1786648927600-440",
       "sioudan yannis - juillet 2026": "uc-1786648927600-440",
-      "josephine adjagbenon - juillet 2026": "uc-1786648927600-440"
+      "josephine adjagbenon - juillet 2026": "uc-1786648927600-440",
+      "hyprquest - summer campaign": "uc-1786722480628-759"
     },
     "6747000": {
       "tcl": "uc-1786648988526-889",
