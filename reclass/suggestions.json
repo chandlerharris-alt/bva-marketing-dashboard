@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T17:26:57.638Z",
+  "_saved_at": "2026-08-14T17:30:03.351Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -736,6 +736,27 @@
       "note": "Dept 74, not 75",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T17:26:57.638Z"
+    },
+    "rc-1786728603054-159": {
+      "id": "rc-1786728603054-159",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "the sports creators agenc",
+      "display_snapshot": "THE SPORTS CREATORS AGENC",
+      "amount_snapshot": -48000,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "40",
+      "to_tag_id": "uc-1783704279044-378",
+      "note": "Dept 74, not 75",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T17:30:03.351Z"
     }
   }
 }
