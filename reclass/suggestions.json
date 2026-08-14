@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-10T15:41:09.307Z",
+  "_saved_at": "2026-08-14T15:45:39.808Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -106,6 +106,27 @@
       "note": null,
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-10T15:41:09.307Z"
+    },
+    "rc-1786722339718-755": {
+      "id": "rc-1786722339718-755",
+      "slug": "media",
+      "from_account": "6740000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "josephine adjagbenon - juillet 2026",
+      "display_snapshot": "JOSEPHINE ADJAGBENON - JUILLET 2026",
+      "amount_snapshot": 3812.724639604291,
+      "to_account": "6747000",
+      "to_account_name": null,
+      "to_department": "075",
+      "to_company": "11",
+      "to_tag_id": "uc-1786648927600-440",
+      "note": null,
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T15:45:39.808Z"
     }
   }
 }
