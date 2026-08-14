@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-14T15:57:46.481Z",
+  "_last_updated": "2026-08-14T16:11:58.488Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -117,6 +117,11 @@
       "id": "uc-1786723007068-140",
       "name": "reta",
       "color": "#bbf7d0"
+    },
+    {
+      "id": "uc-1786723732705-84",
+      "name": "Amazon",
+      "color": "#fbcfe8"
     }
   ],
   "descToCategory": {},
@@ -160,7 +165,9 @@
       "confianza online": "uc-1786648605492-184",
       "kameleoon - 15/06/2026 au 30/09/2026": "uc-1786648878155-760",
       "lara kutsch - deplacement evenement pilate berlin": "uc-1786648424708-907",
-      "cidi": "uc-1786648605492-184"
+      "cidi": "uc-1786648605492-184",
+      "amazon.com services, inc": "uc-1786723732705-84",
+      "52424 amazon accrual": "uc-1786723732705-84"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
