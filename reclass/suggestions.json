@@ -1,6 +1,6 @@
 {
   "_saved_by": "kirsten.spittel@ifit.com",
-  "_saved_at": "2026-08-14T16:31:49.065Z",
+  "_saved_at": "2026-08-14T16:32:41.679Z",
   "suggestions": {
     "rc-1786376198174-671": {
       "id": "rc-1786376198174-671",
@@ -316,6 +316,27 @@
       "note": "Australia, not UK",
       "created_by": "kirsten.spittel@ifit.com",
       "created_at": "2026-08-14T16:31:49.065Z"
+    },
+    "rc-1786725161415-180": {
+      "id": "rc-1786725161415-180",
+      "slug": "media",
+      "from_account": "6736000",
+      "from_account_name": null,
+      "fy": 2027,
+      "fm": 2,
+      "from_company": null,
+      "from_channel": null,
+      "vendor_key": "58740 paola fuentes vel",
+      "display_snapshot": "58740   PAOLA FUENTES VEL",
+      "amount_snapshot": 1599.2225506187776,
+      "to_account": "6736000",
+      "to_account_name": null,
+      "to_department": "074",
+      "to_company": "41",
+      "to_tag_id": "uc-1783704279044-378",
+      "note": "Spain, not UK",
+      "created_by": "kirsten.spittel@ifit.com",
+      "created_at": "2026-08-14T16:32:41.679Z"
     }
   }
 }
