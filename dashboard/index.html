@@ -1100,7 +1100,16 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
       <div class="form-field"><label>Dept</label><select id="fr-dept"></select></div>
       <div class="form-field"><label>Channel</label><select id="fr-channel"></select></div>
     </div>
-    <div id="fr-ccy-hint" style="font-size:11px;color:var(--gray);margin:-2px 0 10px">Amounts are entered in the company's local currency.</div>
+    <div class="form-row" id="fr-inputccy-row" style="align-items:center">
+      <div class="form-field" style="flex:0 0 auto">
+        <label>Enter amounts in</label>
+        <div class="pill-group" id="fr-inputccy-toggle">
+          <button type="button" data-v="local" class="active" onclick="setFcRowInputCcy('local')">Local</button>
+          <button type="button" data-v="usd" onclick="setFcRowInputCcy('usd')">USD</button>
+        </div>
+      </div>
+    </div>
+    <div id="fr-ccy-hint" style="font-size:11px;font-weight:600;color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:4px;padding:6px 10px;margin:-2px 0 12px">Amounts are entered in the company's local currency.</div>
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:6px">Monthly Amounts ($000s) — Jun through May</div>
     <div class="month-grid" id="fr-months"></div>
     <div class="modal-footer">
@@ -2318,6 +2327,22 @@ function fcConvVal(val, co){
 }
 // Convert one forecast plan line's amount to display currency (company from level_code/source_company).
 function fcPlanCur(l){ return fcConvVal(l.amount || 0, fcLineCo(l)); }
+// Inverse of fcConvVal: a value the user ENTERED in the current display currency -> stored LOCAL.
+// In USD mode, local = usd * rate(company, latest-actuals-month) (exact inverse of fcConvVal, same
+// rate, so display round-trips with no drift). No-op in Local mode.
+function fcLocalFromDisplay(val, co){
+  if (STATE.currency !== 'USD') return val || 0;
+  return usdToLocalAt(val, co);
+}
+// Unconditional USD -> company-local at the latest-actuals-month rate (used by the add-line modal,
+// where the entry currency is chosen explicitly rather than following the global display toggle).
+function usdToLocalAt(val, co){
+  const lam = latestActualsMonth();
+  const r = fxRate(co, lam.fy, lam.fm);
+  return r ? (val||0) * r : (val||0);
+}
+// Currency ticker for a company (its local ccy, or USD).
+function coCcy(co){ return (((DATA.meta && DATA.meta.fx_local_currency_by_company) || {})[String(co)] || 'USD'); }
 // ===============================================================================
 
 // Channel + company scoped actuals, summed DIRECTLY from actuals_by_channel_company
@@ -5612,11 +5637,14 @@ function fcCellEdit(td, opts){
 }
 
 // ---- write helpers (single + batch), all funneled through one override mutator ----
-function _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey){
+function _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey, co){
   verKey = verKey || STATE.fcVersion;
   const src = source || (STATE.fcSubTab === 'cl' ? 'CONTRACT_LABOR' : 'PLANNING_GENERAL');
   const k = overrideKey(ACTIVE_SLUG, verKey, src);
   try { FC_DIRTY_KEYS.add(k); } catch(e){}   // this browser has unsaved edits on this key — hydration must not clobber
+  // Values are ALWAYS stored in the line's LOCAL currency. In USD display mode the user entered a
+  // USD number, so convert it back to local here (same rate used to display → exact round-trip).
+  val = fcLocalFromDisplay(val, co != null ? co : '');
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
   const addedIdx = (o[k].added||[]).findIndex(a => matchKey(Object.assign({source:src}, a)) === mk);
   // Store the value explicitly — including 0. A 0 is a *forced blank* (the user cleared/zeroed the
@@ -5637,7 +5665,7 @@ function fcCellSave(td, fmIdx, mk, source, rawVal, verKey){
   const val = rawVal === '' || rawVal === null ? 0 : +rawVal;
   fcPushUndo();
   const o = loadOverrides();
-  _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey);
+  _fcApplyEditToOverrides(o, mk, fmIdx, source, val, verKey, td && td.dataset ? td.dataset.co : '');
   saveOverrides(o);
   renderForecastPane();
 }
@@ -5645,7 +5673,7 @@ function fcBatchSave(list){
   if (!list || !list.length) return;
   fcPushUndo();
   const o = loadOverrides();
-  list.forEach(e => _fcApplyEditToOverrides(o, e.mk, e.fm, e.source, e.value, e.verkey));
+  list.forEach(e => _fcApplyEditToOverrides(o, e.mk, e.fm, e.source, e.value, e.verkey, e.co));
   saveOverrides(o);
   renderForecastPane();
 }
@@ -5661,7 +5689,7 @@ function fcClearSelection(){
   // stamp a spurious "overridden" marker on blank cells.
   const cells = fcSelectedCells().filter(td => td.classList.contains('fc-cell-display') && (parseFloat(td.dataset.val)||0) !== 0);
   if (!cells.length) return;
-  const list = cells.map(td => ({ mk:td.dataset.mk, fm:+td.dataset.fm, source:td.dataset.source, verkey:td.dataset.verkey, value:0 }));
+  const list = cells.map(td => ({ mk:td.dataset.mk, fm:+td.dataset.fm, source:td.dataset.source, verkey:td.dataset.verkey, value:0, co:td.dataset.co }));
   FC_PENDING_SEL = { anchor:FC_SEL.anchor, focus:FC_SEL.focus };
   fcBatchSave(list);
 }
@@ -5698,7 +5726,7 @@ function _fcPasteMatrix(matrix){
       const raw = single ? matrix[0][0] : (matrix[r-r1] ? matrix[r-r1][c-c1] : undefined);
       if (raw===undefined) continue;
       const p = fcParseCellInput(raw); if (!p.ok) continue;
-      list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:p.value });
+      list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:p.value, co:cell.dataset.co });
       lastR=r; lastC=c;
     }
   }
@@ -5720,7 +5748,7 @@ function fcFillAcross(){
   const row=g[r]; if (!row) return;
   const v = parseFloat(row[c].dataset.val) || 0;
   const list=[];
-  for (let j=c;j<row.length;j++){ const cell=row[j]; if (!cell.classList.contains('fc-cell-display')) continue; list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:v }); }
+  for (let j=c;j<row.length;j++){ const cell=row[j]; if (!cell.classList.contains('fc-cell-display')) continue; list.push({ mk:cell.dataset.mk, fm:+cell.dataset.fm, source:cell.dataset.source, verkey:cell.dataset.verkey, value:v, co:cell.dataset.co }); }
   if (!list.length) return;
   FC_PENDING_SEL = { anchor:FC_SEL.anchor, focus:FC_SEL.focus };
   fcBatchSave(list);
@@ -6156,7 +6184,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
         };
       }
       if (!lineMap[key].perFy[fy]) lineMap[key].perFy[fy] = new Array(12).fill(0);
-      if (l.fm >= 1 && l.fm <= 12) lineMap[key].perFy[fy][l.fm-1] += (l.amount||0);  // stored local currency (editable); USD view handled per-cell at render
+      if (l.fm >= 1 && l.fm <= 12) lineMap[key].perFy[fy][l.fm-1] += fcConvVal(l.amount||0, co);  // display currency (local→USD at latest-actuals rate; no-op in Local). Edits convert back to local on save.
     });
   });
 
@@ -6185,7 +6213,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       if (!ce){ const arec = ad.find(a => matchKey(Object.assign({source: primarySrc}, a)) === line.mk); ce = arec && arec.cellEdits; }
       if (!ce) return;
       if (!line.perFy[fy]) line.perFy[fy] = new Array(12).fill(0);
-      Object.keys(ce).forEach(k => { const i = +k; if (i >= 0 && i < 12) line.perFy[fy][i] = ce[k]; });
+      Object.keys(ce).forEach(k => { const i = +k; if (i >= 0 && i < 12) line.perFy[fy][i] = fcConvVal(ce[k], line.co); });
     });
   });
 
@@ -6270,7 +6298,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
         const cls = (canEdit ? 'num fc-cell-display' : 'num fc-cell-readonly') + (overridden ? ' fc-cell-overridden' : '');
         const click = canEdit ? `onmousedown="fcCellMouseDown(event,this)" ondblclick="fcCellEdit(this)" oncontextmenu="fcCellContextMenu(event,this)"` : '';
         return `<td class="${cls}" data-fm="${i}" data-mk="${mk.replace(/"/g,'&quot;')}"
-                data-source="${primarySrc}" data-verkey="${verKey.replace(/"/g,'&quot;')}" data-val="${v}"
+                data-source="${primarySrc}" data-verkey="${verKey.replace(/"/g,'&quot;')}" data-val="${v}" data-co="${line.co||''}"
                 ${click}>${fmtUSD(v)}</td>`;
       }).join('');
       const ft = mo.reduce((s,v)=>s+v,0);
@@ -6402,6 +6430,10 @@ function renderForecastPane(){
               : '')
           : '<div class="readonly-banner" style="margin-bottom:10px">&#128274; Read-only — only <strong>Working Forecast</strong> can be edited. Switch versions to make changes.</div>')
     ;
+  const ccyNote = !isEditor ? ''
+    : (STATE.currency === 'USD'
+        ? '<div style="font-size:11px;color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:4px;padding:6px 10px;margin-bottom:8px">&#128181; <strong>USD view</strong> — plan converted at the latest actuals-month rate. Editing is enabled: you enter USD and it’s stored in each line’s local currency (shown under <strong>Co</strong>). Toggle to <strong>Local</strong> (top-right) to enter native amounts.</div>'
+        : '<div style="font-size:11px;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:6px 10px;margin-bottom:8px">&#127991;&#65039; <strong>Local currency</strong> — each line is in its company’s local currency (shown under <strong>Co</strong>). Toggle to <strong>USD</strong> (top-right) to view/enter in USD.</div>');
   const editBar = `
     <div class="fc-filter-bar">
       <div class="fc-fb-group">
@@ -6410,7 +6442,7 @@ function renderForecastPane(){
       </div>
       <div class="fc-fb-group">${actionBtns}</div>
     </div>
-    ${banner}
+    ${ccyNote}${banner}
   `;
 
   if (!versionName || !fys.length){
@@ -6939,20 +6971,39 @@ function openFcRowModal(src, verKey){
   // Channel — display channels; default Corp/Other.
   const chans = (typeof MKTG_DISPLAY_CHANNELS !== 'undefined') ? MKTG_DISPLAY_CHANNELS : ['DTC','Wholesale','Freemotion','Corp/Other'];
   document.getElementById('fr-channel').innerHTML = chans.map(c=>`<option value="${c}"${c==='Corp/Other'?' selected':''}>${c}</option>`).join('');
-  fcRowCcyHint();
+  setFcRowInputCcy('local');   // reset entry-currency toggle (hint may force USD for USD-only companies)
   const grid = document.getElementById('fr-months');
   grid.innerHTML = FM_LABELS.map((m,i)=>`<input type="number" placeholder="${m}" id="fr-m${i}" step="0.01">`).join('');
   document.getElementById('fc-row-modal').classList.add('open');
 }
-// Show which local currency the entered amounts are in, based on the chosen company.
+// Which currency the user is entering the new line's amounts in ('local' = company ccy, or 'usd').
+let _fcRowInputCcy = 'local';
+function setFcRowInputCcy(v){
+  _fcRowInputCcy = v;
+  document.querySelectorAll('#fr-inputccy-toggle button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  fcRowCcyHint();
+}
+// Make the entry currency VERY clear: companies whose local ccy is USD are USD-only (toggle hidden);
+// non-USD companies can enter in local OR USD (USD is converted to local for storage).
 function fcRowCcyHint(){
   const el = document.getElementById('fr-ccy-hint'); if (!el) return;
   const co = (document.getElementById('fr-company')||{}).value || '';
-  const ccyMap = (DATA.meta && DATA.meta.fx_local_currency_by_company) || {};
-  const coMap = (DATA.meta && DATA.meta.source_company_map) || {};
-  if (!co){ el.textContent = "Pick a company — amounts are entered in that company's local currency."; return; }
-  const ccy = ccyMap[String(co)] || 'USD';
-  el.innerHTML = `Amounts entered in <b>${ccy}</b> (${coMap[co]||('Co '+co)}). The USD/Local toggle converts on display.`;
+  const coName = co ? (((DATA.meta&&DATA.meta.source_company_map)||{})[co] || ('Co '+co)) : '';
+  const ccy = co ? coCcy(co) : '';
+  const isUsdOnly = !ccy || ccy === 'USD';
+  const row = document.getElementById('fr-inputccy-row');
+  if (row) row.style.display = (co && !isUsdOnly) ? '' : 'none';   // hide toggle for USD-only companies
+  if (co && isUsdOnly && _fcRowInputCcy !== 'usd'){ _fcRowInputCcy = 'usd'; document.querySelectorAll('#fr-inputccy-toggle button').forEach(b => b.classList.toggle('active', b.dataset.v === 'usd')); }
+  const localBtn = document.querySelector('#fr-inputccy-toggle button[data-v="local"]');
+  if (localBtn) localBtn.textContent = (ccy && ccy !== 'USD') ? ('Local · ' + ccy) : 'Local';
+  if (!co){ el.innerHTML = 'Pick a company — the entry currency follows the company.'; return; }
+  if (isUsdOnly){
+    el.innerHTML = `&#128176; <b>${coName}</b> transacts in <b>USD</b> — enter amounts in USD.`;
+  } else if (_fcRowInputCcy === 'usd'){
+    el.innerHTML = `&#128176; Entering in <b>USD</b> — amounts will be stored in <b>${ccy}</b> (${coName}) at the latest actuals-month rate for Adaptive.`;
+  } else {
+    el.innerHTML = `&#128176; Entering in <b>${ccy}</b> — ${coName}'s local currency.`;
+  }
 }
 function closeFcRowModal(){ document.getElementById('fc-row-modal').classList.remove('open'); }
 function saveFcRowModal(){
@@ -6985,11 +7036,15 @@ function saveFcRowModal(){
   const o = loadOverrides();
   const k = overrideKey(ACTIVE_SLUG, verKeySafe, src);
   if (!o[k]) o[k]={added:[],removed:[],edited:{}};
+  // Lines are stored in the company's LOCAL currency. If the user entered in USD (non-USD company),
+  // convert to local at the latest-actuals-month rate so the stored plan is Adaptive-ready.
+  const enteredUsd = (_fcRowInputCcy === 'usd') && (coCcy(company) !== 'USD');
+  const toStore = amt => enteredUsd ? usdToLocalAt(amt, company) : amt;
   monthAmounts.forEach((amount, i) => {
     if (!amount) return;
     o[k].added.push({
       id: id + '-' + i, description: desc, account: acct, vendor, notes,
-      fy, fm: i + 1, amount, expense_type: 'Expense', source: src,
+      fy, fm: i + 1, amount: toStore(amount), expense_type: 'Expense', source: src,
       level_code: company, dept_str: dept, channel,
     });
   });
@@ -7077,7 +7132,7 @@ function exportPlanningGeneralCsv(){
             channel: l.channel || '', dept_str: l.dept_str || '',
             acct_code: baseAcct, acct_name: acctNameMap[acct] || acctNameMap[baseAcct] || baseAcct,
             vendor_name: l.vendor || '', expense_type: l.expense_type || 'Expense',
-            currency: 'USD', months: new Array(24).fill(0),
+            currency: coCcy(l.level_code || '11'), months: new Array(24).fill(0),   // each row exports in its company's local currency
           };
         }
         if (l.fm >= 1 && l.fm <= 12){
