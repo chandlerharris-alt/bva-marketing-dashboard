@@ -51,7 +51,10 @@
       "admin": false,
       "tabs": {
         "marketing": {
-          "view": true
+          "view": true,
+          "tag": true,
+          "comment": true,
+          "forecast": true
         },
         "media": {
           "view": true,
