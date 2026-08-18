@@ -5060,6 +5060,7 @@ function saveOverrides(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o));
 // (safe to refresh from the server) from one this browser has locally edited (never clobber it).
 let FC_DIRTY_KEYS = new Set();     // override keys this browser has edited but not yet published
 let _fcHydrating = false;
+let _fcMkMigrated = false;         // guard: run the company-aware matchKey migration once per session
 function _fcLoadPubSnap(){ try { return JSON.parse(localStorage.getItem('bva_fc_published')||'{}'); } catch(e){ return {}; } }
 function _fcSavePubSnap(o){ try { localStorage.setItem('bva_fc_published', JSON.stringify(o)); } catch(e){} }
 // The last-published (shared/committed) override section for a key — the "Last Published Forecast"
@@ -5091,6 +5092,60 @@ function _fcMergeSections(base, mine){
   });
   return out;
 }
+// One-time-safe, NON-DESTRUCTIVE migration for the 2026-08-17 company-aware matchKey change.
+// Pre-existing forecast overrides were keyed company-less (source|description|vendor|account);
+// the new matchKey appends company. For each legacy edit/removal that maps to exactly ONE company
+// in the base data, add the company-aware key as an alias so the edit keeps applying after the
+// change. Edits that spanned MULTIPLE companies were the cross-country leak and are intentionally
+// left un-aliased (they revert to base — re-enter per country). Only ADDS keys, never deletes, so
+// it is safe to run repeatedly and cannot lose data (worst case an edit simply stays reverted).
+function migrateForecastOverrideKeys(){
+  try {
+    if (!DATA || !DATA.accounts) return;
+    const store = loadOverrides();
+    let changed = false;
+    const isLegacy = key => (String(key).split('|').length < 5);   // 4 fields = pre-migration key
+    Object.keys(store).forEach(k => {
+      if (!k || k.indexOf('||') < 0) return;
+      const parts = k.split('||');                 // slug || "ver | FYyyyy" || source
+      const source = parts[2] || '';
+      const vfm = /^(.*)\s\|\sFY(\d{4})$/.exec(parts[1] || '');
+      const ver = vfm ? vfm[1] : (parts[1] || '');
+      const fy  = vfm ? +vfm[2] : null;
+      const sec = store[k];
+      if (!sec) return;
+      // Build legacyKey -> Set(company-aware key) from the base forecast lines of this (source,ver,fy).
+      const map = {};
+      (DATA.accounts||[]).forEach(a => (a.forecast_lines||[]).forEach(l => {
+        const ls = l.source || 'PLANNING_GENERAL';
+        if (ls !== source) return;
+        if (ver && (l.version||'') !== ver) return;
+        if (fy != null && +l.fy !== fy) return;
+        const wa = Object.assign({}, l, { account: l.account || a.reporting_account, source: ls });
+        const lk = matchKeyLegacy(wa);
+        (map[lk] = map[lk] || new Set()).add(matchKey(wa));
+      }));
+      if (sec.edited && typeof sec.edited === 'object'){
+        Object.keys(sec.edited).forEach(key => {
+          if (!isLegacy(key)) return;
+          const news = map[key];
+          if (news && news.size === 1){ const nk = [...news][0]; if (nk !== key && !sec.edited[nk]){ sec.edited[nk] = sec.edited[key]; changed = true; } }
+        });
+      }
+      if (Array.isArray(sec.removed)){
+        const extra = [];
+        sec.removed.forEach(key => {
+          if (!isLegacy(key)) return;
+          const news = map[key];
+          if (news && news.size === 1){ const nk = [...news][0]; if (!sec.removed.includes(nk)) extra.push(nk); }
+        });
+        if (extra.length){ sec.removed = sec.removed.concat(extra); changed = true; }
+      }
+    });
+    if (changed) saveOverrides(store);
+  } catch(e){ /* non-fatal: worst case pre-migration edits stay reverted to base */ }
+}
+
 async function hydrateForecastFromServer(slug){
   if (!slug || _fcHydrating) return;
   _fcHydrating = true;
@@ -5140,6 +5195,7 @@ async function hydrateForecastFromServer(slug){
     }
     _fcSavePubSnap(pub);
     if (changed) saveOverrides(store);   // <-- persist hydrated edits so the editor/Summary (which re-read localStorage) actually see them
+    migrateForecastOverrideKeys();       // re-key legacy company-less overrides now that server edits are merged
     if (/[?&]fcdebug/i.test(location.search)){
       let el = document.getElementById('fc-hyd-debug');
       if (!el){ el = document.createElement('div'); el.id='fc-hyd-debug'; el.style.cssText='position:fixed;bottom:8px;left:8px;z-index:12000;background:#0b1021;color:#7CFC00;font:11px/1.45 ui-monospace,monospace;padding:10px 12px;max-width:660px;max-height:46vh;overflow:auto;border:1px solid #2dd4bf;border-radius:6px;white-space:pre-wrap;box-shadow:0 6px 20px rgba(0,0,0,.4)'; document.body.appendChild(el); }
@@ -6236,6 +6292,9 @@ function toggleFcShowPublished(){
 
 function renderForecastPane(){
   if (!DATA || !ACTIVE_SLUG) { return; }
+  // Safety net: re-key any legacy company-less overrides once per session (covers stores that
+  // predate the 2026-08-17 matchKey change without a fresh server hydrate). Idempotent + cheap-guarded.
+  if (!_fcMkMigrated){ _fcMkMigrated = true; migrateForecastOverrideKeys(); }
   const content = document.getElementById('fc-content');
   if (!content) return;
   content.innerHTML = '<div class="spinner">Building forecast view…</div>';
