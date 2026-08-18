@@ -1095,6 +1095,12 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
       <div class="form-field"><label>Vendor</label><input id="fr-vendor" type="text"></div>
       <div class="form-field"><label>Notes</label><input id="fr-notes" type="text"></div>
     </div>
+    <div class="form-row">
+      <div class="form-field"><label>Company</label><select id="fr-company" onchange="fcRowCcyHint()"></select></div>
+      <div class="form-field"><label>Dept</label><select id="fr-dept"></select></div>
+      <div class="form-field"><label>Channel</label><select id="fr-channel"></select></div>
+    </div>
+    <div id="fr-ccy-hint" style="font-size:11px;color:var(--gray);margin:-2px 0 10px">Amounts are entered in the company's local currency.</div>
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:6px">Monthly Amounts ($000s) — Jun through May</div>
     <div class="month-grid" id="fr-months"></div>
     <div class="modal-footer">
@@ -5235,11 +5241,22 @@ function computeSpreadMonthly(spreads){
   return out;
 }
 
-function applyOverrides(lines, slug, versionKey, source, sectionOverride){
+function applyOverrides(lines, slug, versionKey, source, sectionOverride, opts){
   const ov = sectionOverride || getOverrideSection(slug, versionKey, source);
   const removed = new Set(ov.removed||[]);
   const edited = ov.edited||{};
   const added = ov.added||[];
+  // When rendering a geography sub-section (editor / forecast Summary), scope net-new added lines
+  // to that sub-section — mirrors collectFcLines' passFilter for base lines — so an added line no
+  // longer leaks into every country. Export/other callers omit opts and get ALL added lines.
+  const _scopeAdded = opts && opts.scopeAddedToSubSection;
+  const _ssAddDepts = (_scopeAdded && STATE.subSection?.filter?.depts) ? new Set(STATE.subSection.filter.depts.map(d => String(d).padStart(3,'0'))) : null;
+  const _ssAddCos = (_scopeAdded && STATE.subSection?.filter?.companies) ? new Set(STATE.subSection.filter.companies.map(String)) : null;
+  function _addedPassesSub(a){
+    if (_ssAddDepts){ const ds = a.dept_str ? String(a.dept_str).padStart(3,'0') : ''; if (!ds || !_ssAddDepts.has(ds)) return false; }
+    if (_ssAddCos){ const co = (a.level_code!=null && String(a.level_code).trim()!=='') ? String(parseInt(a.level_code,10)) : ''; if (!co || !_ssAddCos.has(co)) return false; }
+    return true;
+  }
 
   // A cellEdits map stores {fmIdx(0-based): amount}, keyed per-mk-group — apply
   // the one matching this row's own fiscal month onto l.amount (not just spread
@@ -5297,6 +5314,7 @@ function applyOverrides(lines, slug, versionKey, source, sectionOverride){
     });
   });
   added.forEach(a => {
+    if (!_addedPassesSub(a)) return;   // scope net-new lines to the active geography sub-section
     const row = Object.assign({ source }, a);
     const mk = matchKey(row);
     const rec = added.find(x => matchKey(Object.assign({source}, x)) === mk);
@@ -6389,7 +6407,7 @@ function renderForecastPane(){
       allSources.forEach(s => {
         const verKey = versionName + ' | FY' + fy;
         let lines = collectFcLines(s, versionName, fy);
-        lines = applyOverrides(lines, ACTIVE_SLUG, verKey, s);
+        lines = applyOverrides(lines, ACTIVE_SLUG, verKey, s, null, {scopeAddedToSubSection:true});
         lines = lines.filter(l => !FC_EXCLUDE_ACCTS.has(String(l.account || l.reporting_account || '').replace(/C$/i,'')));
         if (s === 'CONTRACT_LABOR') lines = lines.filter(l => !/^78550/.test(String(l.account || l.reporting_account || '')));
         lines.forEach(l => merged.push(Object.assign({}, l, { _sourceTag: s })));
@@ -6512,7 +6530,7 @@ function renderForecastPane(){
     const verKey = versionName + ' | FY' + fy;
     let lines = collectFcLines(src, versionName, fy);
     const pubSec = FORECAST_STATE.showPublished ? fcPublishedSection(ACTIVE_SLUG, verKey, src) : null;
-    lines = applyOverrides(lines, ACTIVE_SLUG, verKey, src, pubSec);
+    lines = applyOverrides(lines, ACTIVE_SLUG, verKey, src, pubSec, {scopeAddedToSubSection:true});
     lines = lines.filter(l => !FC_EXCLUDE_ACCTS.has(String(l.account || l.reporting_account || '').replace(/C$/i,'')));
     if (STATE.fcSubTab === 'cl') lines = lines.filter(l => !/^78550/.test(String(l.account || l.reporting_account || '')));
     perFyLines[fy] = lines;
@@ -6874,9 +6892,36 @@ function openFcRowModal(src, verKey){
     opt.textContent=a.reporting_account+(a.account_name&&a.account_name!==a.reporting_account?' — '+a.account_name:'');
     sel.appendChild(opt);
   });
+  // Company — from source_company_map; preselect the active geography sub-section's company if one is set.
+  const coMap = (DATA.meta && DATA.meta.source_company_map) || {};
+  const ssCos = (STATE.subSection && STATE.subSection.filter && STATE.subSection.filter.companies) ? STATE.subSection.filter.companies.map(String) : null;
+  const coSel = document.getElementById('fr-company');
+  coSel.innerHTML = '<option value="">(select company)</option>' +
+    Object.keys(coMap).sort((a,b)=>(+a)-(+b)).map(c=>`<option value="${c}">${c} — ${coMap[c]}</option>`).join('');
+  coSel.value = (ssCos && ssCos.length === 1) ? ssCos[0] : '';
+  // Dept — distinct dept_str present in the data, plus the tab's dept numbers; default to the first.
+  const deptSet = new Set();
+  (DATA.accounts||[]).forEach(a => (a.forecast_lines||[]).forEach(l => { if (l.dept_str) deptSet.add(String(l.dept_str).padStart(3,'0')); }));
+  ((DATA.meta && DATA.meta.dept_numbers) || []).forEach(d => deptSet.add(String(d).padStart(3,'0')));
+  const depts = [...deptSet].sort();
+  document.getElementById('fr-dept').innerHTML = depts.length ? depts.map(d=>`<option value="${d}">${d}</option>`).join('') : '<option value="075">075</option>';
+  // Channel — display channels; default Corp/Other.
+  const chans = (typeof MKTG_DISPLAY_CHANNELS !== 'undefined') ? MKTG_DISPLAY_CHANNELS : ['DTC','Wholesale','Freemotion','Corp/Other'];
+  document.getElementById('fr-channel').innerHTML = chans.map(c=>`<option value="${c}"${c==='Corp/Other'?' selected':''}>${c}</option>`).join('');
+  fcRowCcyHint();
   const grid = document.getElementById('fr-months');
   grid.innerHTML = FM_LABELS.map((m,i)=>`<input type="number" placeholder="${m}" id="fr-m${i}" step="0.01">`).join('');
   document.getElementById('fc-row-modal').classList.add('open');
+}
+// Show which local currency the entered amounts are in, based on the chosen company.
+function fcRowCcyHint(){
+  const el = document.getElementById('fr-ccy-hint'); if (!el) return;
+  const co = (document.getElementById('fr-company')||{}).value || '';
+  const ccyMap = (DATA.meta && DATA.meta.fx_local_currency_by_company) || {};
+  const coMap = (DATA.meta && DATA.meta.source_company_map) || {};
+  if (!co){ el.textContent = "Pick a company — amounts are entered in that company's local currency."; return; }
+  const ccy = ccyMap[String(co)] || 'USD';
+  el.innerHTML = `Amounts entered in <b>${ccy}</b> (${coMap[co]||('Co '+co)}). The USD/Local toggle converts on display.`;
 }
 function closeFcRowModal(){ document.getElementById('fc-row-modal').classList.remove('open'); }
 function saveFcRowModal(){
@@ -6884,10 +6929,19 @@ function saveFcRowModal(){
   const acct = document.getElementById('fr-account').value;
   const vendor = document.getElementById('fr-vendor').value.trim();
   const notes = document.getElementById('fr-notes').value.trim();
+  const company = document.getElementById('fr-company').value;
+  const dept = document.getElementById('fr-dept').value;
+  const channel = document.getElementById('fr-channel').value || 'Corp/Other';
   const verKey = _fcRowVerKey || STATE.fcVersion;
   const src = _fcRowSrc || 'PLANNING_GENERAL';
   const vkm = verKey.match(/^(.*) \| FY(\d+)$/);
   const fy = +(vkm?.[2] || STATE.fy);
+  // Company is required — without it the line has no geography (leaks into every region) and no
+  // currency (can't FX-convert). Dept/channel default sensibly.
+  if (!company){
+    alert('Select a Company so the line is scoped to the right geography and currency.');
+    return;
+  }
   // One {fm, amount} row per nonzero month — matches the shape every reader
   // (buildFcLineItemEditor, groupLinesByCatAcct) expects from a forecast line.
   const monthAmounts = FM_LABELS.map((_,i) => +(document.getElementById('fr-m'+i)?.value || 0));
@@ -6905,6 +6959,7 @@ function saveFcRowModal(){
     o[k].added.push({
       id: id + '-' + i, description: desc, account: acct, vendor, notes,
       fy, fm: i + 1, amount, expense_type: 'Expense', source: src,
+      level_code: company, dept_str: dept, channel,
     });
   });
   saveOverrides(o);
@@ -6990,7 +7045,7 @@ function exportPlanningGeneralCsv(){
             description: l.description || '', level_code: l.level_code || '',
             channel: l.channel || '', dept_str: l.dept_str || '',
             acct_code: baseAcct, acct_name: acctNameMap[acct] || acctNameMap[baseAcct] || baseAcct,
-            vendor_code: l.vendor || '', expense_type: l.expense_type || 'Expense',
+            vendor_name: l.vendor || '', expense_type: l.expense_type || 'Expense',
             currency: 'USD', months: new Array(24).fill(0),
           };
         }
@@ -7031,7 +7086,7 @@ function exportPlanningGeneralCsv(){
     const row = [
       rec.description, levelCode, levelName, rec.channel||'Corp/Other', rec.channel||'Corp/Other',
       lineDept, `${lineDept} - ${deptName}`, rec.acct_code, rec.acct_name, rec.acct_code, rec.acct_name,
-      rec.vendor_code, '', 'None', rec.expense_type, rec.expense_type, '', '',
+      '', rec.vendor_name, 'None', rec.expense_type, rec.expense_type, '', '',
       '0.0 - Base Case', '0.0 - Base Case', rec.currency || 'USD', ...rec.months.map(v => v.toString())
     ];
     rows.push(row.map(csvEscape).join(','));
