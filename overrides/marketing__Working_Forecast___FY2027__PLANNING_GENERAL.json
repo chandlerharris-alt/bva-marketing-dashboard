@@ -1,6 +1,6 @@
 {
   "_saved_by": "michael.doran@ifit.com",
-  "_saved_at": "2026-08-18T15:33:51.383Z",
+  "_saved_at": "2026-08-18T15:42:00.491Z",
   "slug": "marketing",
   "version": "Working Forecast | FY2027",
   "source": "PLANNING_GENERAL",
@@ -38,7 +38,11 @@
       "source": "PLANNING_GENERAL",
       "level_code": "11",
       "dept_str": "075",
-      "channel": "Corp/Other"
+      "channel": "Corp/Other",
+      "cellEdits": {
+        "10": 47000,
+        "11": 47000
+      }
     }
   ],
   "removed": [],
