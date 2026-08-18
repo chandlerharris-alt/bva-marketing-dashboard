@@ -6156,7 +6156,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
         };
       }
       if (!lineMap[key].perFy[fy]) lineMap[key].perFy[fy] = new Array(12).fill(0);
-      if (l.fm >= 1 && l.fm <= 12) lineMap[key].perFy[fy][l.fm-1] += fcConvVal(l.amount||0, co);  // local→USD at latest-actuals rate (no-op in Local)
+      if (l.fm >= 1 && l.fm <= 12) lineMap[key].perFy[fy][l.fm-1] += (l.amount||0);  // stored local currency (editable); USD view handled per-cell at render
     });
   });
 
@@ -6185,7 +6185,7 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
       if (!ce){ const arec = ad.find(a => matchKey(Object.assign({source: primarySrc}, a)) === line.mk); ce = arec && arec.cellEdits; }
       if (!ce) return;
       if (!line.perFy[fy]) line.perFy[fy] = new Array(12).fill(0);
-      Object.keys(ce).forEach(k => { const i = +k; if (i >= 0 && i < 12) line.perFy[fy][i] = fcConvVal(ce[k], line.co); });
+      Object.keys(ce).forEach(k => { const i = +k; if (i >= 0 && i < 12) line.perFy[fy][i] = ce[k]; });
     });
   });
 
@@ -6376,8 +6376,7 @@ function renderForecastPane(){
   // USD is a read-only VIEW: plan lines are stored/edited in each company's local currency, so we
   // convert for display (at the latest-actuals-month rate) but disable editing to avoid entering
   // USD into local-currency cells. Editing happens in Local mode.
-  const _usdView = STATE.currency === 'USD';
-  const canEdit = isEditor && isWorkingForecast && authCan(ACTIVE_SLUG, 'forecast') && !FORECAST_STATE.showPublished && !_usdView;
+  const canEdit = isEditor && isWorkingForecast && authCan(ACTIVE_SLUG, 'forecast') && !FORECAST_STATE.showPublished;
 
   const sourceMap = { opex:'PLANNING_GENERAL', cl:'CONTRACT_LABOR' };
   const src = sourceMap[STATE.fcSubTab] || 'PLANNING_GENERAL';
@@ -6395,8 +6394,6 @@ function renderForecastPane(){
        <button class="btn-sm${FORECAST_STATE.showPublished ? ' fc-toggle-on' : ''}" id="fc-pub-btn" onclick="toggleFcShowPublished()" title="View the last published (saved) forecast — read-only reference only, not the plan to edit">${FORECAST_STATE.showPublished ? '👁 Viewing Last Published (read-only)' : '👁 Last Published Forecast'}</button>`
     : '';
   const banner = !isEditor ? ''
-    : (_usdView && isWorkingForecast && !FORECAST_STATE.showPublished)
-      ? '<div class="readonly-banner" style="margin-bottom:10px;background:#ecfdf5;border-color:#a7f3d0;color:#065f46">&#128176; <strong>USD view</strong> — plan lines converted at the latest actuals month’s FX rate (read-only). Switch the currency toggle to <strong>Local</strong> to edit.</div>'
     : FORECAST_STATE.showPublished
       ? '<div class="readonly-banner" style="margin-bottom:10px;background:#eef6ff;border-color:#bfdbff;color:#1e40af">&#128065; <strong>Last Published Forecast</strong> — read-only reference (the last Saved / shared numbers). This is <em>not</em> an editable plan. Turn off &ldquo;Last Published Forecast&rdquo; to edit the Working Forecast.</div>'
       : (canEdit
