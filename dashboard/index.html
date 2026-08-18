@@ -5159,7 +5159,12 @@ function getOverrideSection(slug, versionKey, source){
   return o[k];
 }
 
-function matchKey(l){ return [l.source||'', l.description||'', l.vendor||'', l.account||l.reporting_account||''].join('|'); }
+// Company component of a forecast line's identity. WITHOUT this, an edit to (e.g.) "Paid Social"
+// keyed only by source|description|vendor|account matched EVERY company's same-named line, so
+// editing the Co 74 line copied the value to every country (fixed 2026-08-17).
+function _mkCo(l){ return (l && l.level_code != null && String(l.level_code).trim() !== '') ? String(parseInt(l.level_code,10)) : ''; }
+function matchKeyLegacy(l){ return [l.source||'', l.description||'', l.vendor||'', l.account||l.reporting_account||''].join('|'); }
+function matchKey(l){ return matchKeyLegacy(l) + '|' + _mkCo(l); }
 
 function computeSpreadMonthly(spreads){
   const out = new Array(12).fill(0);
@@ -5207,17 +5212,25 @@ function applyOverrides(lines, slug, versionKey, source, sectionOverride){
   Object.keys(edited).forEach(mk => {
     const ce = edited[mk] && edited[mk].cellEdits;
     if (!ce) return;
+    // Legacy company-less keys (pre-2026-08-17, 4 fields = 3 pipes) are superseded by the
+    // company-aware matchKey. Don't resurrect them as orphan lines — they'd mis-parse (the
+    // parser below expects the trailing company field) and re-introduce the cross-country leak.
+    if (mk.split('|').length < 5) return;
     let proto = _mkProto[mk], orphan = false;
     if (!proto){
       // ORPHANED EDIT SAFETY NET: no current base line matches this saved key (the underlying data
       // drifted — description/vendor/account/fiscal-year changed in a refresh). Synthesize a row from
       // the key itself so a saved edit is NEVER silently lost — it renders as its own (flagged) line.
+      // Key shape: source | description(may contain |) | vendor | account | company.
       orphan = true;
       const p = String(mk).split('|');
-      proto = { source: p[0] || source,
-                description: p.length >= 4 ? p.slice(1, p.length-2).join('|') : (p[1] || ''),
-                vendor: p.length >= 3 ? p[p.length-2] : '',
-                account: p[p.length-1] || '', reporting_account: p[p.length-1] || '',
+      const co = p[p.length-1];
+      const acct = p[p.length-2] || '';
+      const vendor = p.length >= 4 ? p[p.length-3] : '';
+      const description = p.length >= 5 ? p.slice(1, p.length-3).join('|') : (p[1] || '');
+      proto = { source: p[0] || source, description, vendor,
+                account: acct, reporting_account: acct,
+                level_code: co || undefined,
                 version: _ovVer, fy: _ovFy, expense_type: 'Expense', _orphanEdit: true };
       _mkFms[mk] = new Set();
     }
