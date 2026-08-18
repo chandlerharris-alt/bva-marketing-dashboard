@@ -1358,7 +1358,7 @@ const STATE = {
   reclassMode:'before',     // 'before' | 'after' — restate financials with suggested reclasses applied
 };
 
-let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary', descWide: false, summaryActualMonths: {}, summaryActualThrough: null };
+let FORECAST_STATE = { fys: null, versionName: null, compareVersionName: null, cmpViewMode: 'primary', descWide: false, summaryActualMonths: {}, summaryActualThrough: null, search: '', sortKey: null, sortDir: 1 };
 // This set was inherited from the Logistics/Warehousing dashboard this app was cloned from --
 // most of these codes (freight/returns-center/COGS accounts) are irrelevant here since this
 // deployment only ever renders the marketing/media manifest tabs, but 7855000/7855000C (Contract
@@ -5823,6 +5823,28 @@ function fcAfterGridRender(){
   } else {
     fcUpdateStatusBar(0,0,0);
   }
+  fcApplySearch();   // re-apply the row filter after any re-render
+}
+
+// ---- forecast grid search + sort ----
+// Sort: click a column header (Description / Account / Co / Category); same header toggles direction.
+function fcSetSort(key){
+  if (FORECAST_STATE.sortKey === key) FORECAST_STATE.sortDir = -(FORECAST_STATE.sortDir || 1);
+  else { FORECAST_STATE.sortKey = key; FORECAST_STATE.sortDir = 1; }
+  renderForecastPane();
+}
+function fcClearSort(){ FORECAST_STATE.sortKey = null; FORECAST_STATE.sortDir = 1; renderForecastPane(); }
+// Search: pure DOM filter (no re-render, so typing keeps focus). Hides non-matching rows by their
+// data-search blob (description / vendor / account / name / category / company).
+function fcApplySearch(){
+  const inp = document.getElementById('fc-search');
+  if (inp) FORECAST_STATE.search = inp.value;
+  const q = String(FORECAST_STATE.search || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('#fc-content .fc-detail-grid tbody tr.fc-bva-line');
+  rows.forEach(tr => {
+    const hay = tr.getAttribute('data-search') || '';
+    tr.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
+  });
 }
 
 // ---- resizable, persistent column widths (saved per browser) ----
@@ -6222,7 +6244,14 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
     fys.forEach(fy => (line.perFy[fy]||[]).forEach(v => total += v));
     return Object.assign(line, { _total: total, _cat: lookupCat(line.acct) });
   });
+  const _sk = FORECAST_STATE.sortKey, _sd = FORECAST_STATE.sortDir || 1;
   lines.sort((a,b) => {
+    if (_sk === 'desc')  return _sd * String(a.desc||'').localeCompare(String(b.desc||''));
+    if (_sk === 'acct')  return _sd * String(a.acct||'').localeCompare(String(b.acct||''));
+    if (_sk === 'co')    return _sd * (((+a.co)||0) - ((+b.co)||0));
+    if (_sk === 'cat')   return _sd * String(a._cat||'').localeCompare(String(b._cat||''));
+    if (_sk === 'total') return _sd * ((a._total||0) - (b._total||0));
+    // default: category order → account → descending magnitude
     if (a._cat !== b._cat) return stdOrder.indexOf(a._cat) - stdOrder.indexOf(b._cat);
     if (a.acct !== b.acct) return a.acct.localeCompare(b.acct);
     return Math.abs(b._total) - Math.abs(a._total);
@@ -6232,10 +6261,12 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
   const fyTotalHdrs = fys.map(fy => `FY${fy-2000}`);
   const grandTotalHdr = fys.length > 1 ? `<th class="section-val">Total</th>` : '';
 
+  const _sortCaret = k => FORECAST_STATE.sortKey === k ? (FORECAST_STATE.sortDir > 0 ? ' ▲' : ' ▼') : '';
+  const _sortHdr = (k, label, resizer) => `<th style="cursor:pointer" title="Click to sort by ${label}" onclick="fcSetSort('${k}')">${label}${_sortCaret(k)}${resizer||''}</th>`;
   const html = [];
   html.push(`<table class="bva fc-detail-grid${FORECAST_STATE.descWide ? ' fc-desc-wide' : ''}"><thead>
     <tr class="group-row">
-      <th>Description${fcColResizerHtml('desc')}</th><th>Account${fcColResizerHtml('acct')}</th><th>Co</th><th>Category${fcColResizerHtml('cat')}</th>
+      ${_sortHdr('desc','Description',fcColResizerHtml('desc'))}${_sortHdr('acct','Account',fcColResizerHtml('acct'))}${_sortHdr('co','Co')}${_sortHdr('cat','Category',fcColResizerHtml('cat'))}
       <th title="Expense or Prepaid">Type</th><th title="Active months">Mo</th>
       ${monthCols.map(h => `<th class="section-val fc-month-h">${h}${fcColResizerHtml('month')}</th>`).join('')}
       ${fyTotalHdrs.map(h => `<th class="section-val">${h}</th>`).join('')}
@@ -6321,7 +6352,8 @@ function buildFcLineItemEditor(perFyLines, fys, versionName, source, slug, canEd
     const descEditHook = canEdit ? ` ondblclick="fcEditDesc(this,'${mkEsc}','${primarySrc}')" style="cursor:text"` : '';
     const _lineCcy = line.co ? (((DATA.meta && DATA.meta.fx_local_currency_by_company) || {})[String(line.co)] || 'USD') : '';
     const coDisplay = line.co ? `${line.co}${_lineCcy ? `<span style="display:block;font-size:9px;color:#8a8f98;letter-spacing:.3px" title="Line currency">${_lineCcy}</span>` : ''}` : '';
-    html.push(`<tr class="fc-bva-line bva other-row" data-mk="${mk.replace(/"/g,'&quot;')}">
+    const _searchBlob = `${line.desc||''} ${line.vendor||''} ${line.acct||''} ${acctName||''} ${cat||''} ${line.co||''}`.toLowerCase().replace(/"/g,'&quot;');
+    html.push(`<tr class="fc-bva-line bva other-row" data-mk="${mk.replace(/"/g,'&quot;')}" data-search="${_searchBlob}">
       <td class="fc-desc-cell" title="${descTitleAttr}"${descEditHook}><div class="fc-desc-inner">${descTextHtml}<span class="fc-desc-tags">${ucChipHtml(ACTIVE_SLUG, line.desc, line.acct)}</span></div>${chipsBlock}</td>
       <td style="color:var(--gray);font-size:11px">${acctDisplay}</td>
       <td style="color:var(--gray);font-size:11px;text-align:center">${coDisplay}</td>
@@ -6434,12 +6466,21 @@ function renderForecastPane(){
     : (STATE.currency === 'USD'
         ? '<div style="font-size:11px;color:#065f46;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:4px;padding:6px 10px;margin-bottom:8px">&#128181; <strong>USD view</strong> — plan converted at the latest actuals-month rate. Editing is enabled: you enter USD and it’s stored in each line’s local currency (shown under <strong>Co</strong>). Toggle to <strong>Local</strong> (top-right) to enter native amounts.</div>'
         : '<div style="font-size:11px;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:6px 10px;margin-bottom:8px">&#127991;&#65039; <strong>Local currency</strong> — each line is in its company’s local currency (shown under <strong>Co</strong>). Toggle to <strong>USD</strong> (top-right) to view/enter in USD.</div>');
+  const searchGroup = isEditor ? `
+      <div class="fc-fb-group">
+        <label class="fc-fb-label">Search</label>
+        <input id="fc-search" type="search" placeholder="description / vendor / account…" oninput="fcApplySearch()"
+               style="font-size:12px;padding:3px 9px;border:1px solid var(--border);border-radius:6px;min-width:230px"
+               value="${(FORECAST_STATE.search||'').replace(/"/g,'&quot;')}">
+        ${FORECAST_STATE.sortKey ? `<button class="btn-sm" onclick="fcClearSort()" title="Clear sort, restore default order">Sort: ${FORECAST_STATE.sortKey} ${FORECAST_STATE.sortDir>0?'▲':'▼'} ✕</button>` : ''}
+      </div>` : '';
   const editBar = `
     <div class="fc-filter-bar">
       <div class="fc-fb-group">
         <label class="fc-fb-label">FY Scope</label>
         <div id="fc-fy-toggle">${fyChips || '<span style="color:var(--gray);font-size:12px">no forecast years available</span>'}</div>
       </div>
+      ${searchGroup}
       <div class="fc-fb-group">${actionBtns}</div>
     </div>
     ${ccyNote}${banner}
