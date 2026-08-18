@@ -758,6 +758,10 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
       <div>Variance Invest/Divest</div>
       <div class="owner">By region</div>
     </div>
+    <div class="sb-tab" id="sb-export-tab" data-slug="export" onclick="loadExportView()">
+      <div>Export Data</div>
+      <div class="owner">Granular extract</div>
+    </div>
     <!-- Contacts + Calendar tabs were Member Care-only and have been removed for Marketing. -->
   </div>
   <!-- Admin section (hidden unless current user has role=admin) — pinned to the bottom of the
@@ -1025,6 +1029,11 @@ tr.drill-txn-row:hover .reclass-btn, .recon-lines tr:hover .reclass-btn{visibili
   <!-- ===== Overview view ===== -->
   <div id="overview-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
     <div id="overview-content"><div class="spinner">Loading…</div></div>
+  </div>
+
+  <!-- ===== Export Data view ===== -->
+  <div id="export-view" style="display:none; padding:18px 24px; flex-direction:column; gap:18px">
+    <div id="export-content"><div class="spinner">Loading…</div></div>
   </div>
 
   <!-- ===== Reclass Suggestions view ===== -->
@@ -1686,6 +1695,7 @@ function loadTab(slug){
   hideReclassView();
   hideDataControlsView();
   hideVarianceTabView();
+  hideExportView();
   const av = document.getElementById('admin-view');
   if (av) av.style.display = 'none';
 
@@ -1808,6 +1818,156 @@ function hideOverviewView(){
   if (fv) fv.style.display = '';
   const vmb = document.getElementById('view-mode-bar');
   if (vmb) vmb.style.display = '';
+}
+
+// ===================== Export Data view (granular extract) =====================
+function hideExportView(){ const el = document.getElementById('export-view'); if (el) el.style.display = 'none'; }
+let EXPORT_STATE = { fy:null, months:null, company:'', channel:'', category:'', gl:'', version:'' };
+function loadExportView(){
+  closeSidebarDrawer();
+  const bvBody = document.getElementById('bva-body'); if (bvBody) bvBody.style.display = 'none';
+  ['forecast-view','contacts-view','calendar-view','overview-view'].forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+  if (typeof hideReclassView === 'function') hideReclassView();
+  if (typeof hideDataControlsView === 'function') hideDataControlsView();
+  if (typeof hideVarianceTabView === 'function') hideVarianceTabView();
+  const fb = document.querySelector('.filterbar'); if (fb) fb.style.display = 'none';
+  const vmb = document.getElementById('view-mode-bar'); if (vmb) vmb.style.display = 'none';
+  const av = document.getElementById('admin-view'); if (av) av.style.display = 'none';
+  const ev = document.getElementById('export-view'); if (ev) ev.style.display = 'flex';
+  document.querySelectorAll('.sb-tab').forEach(d => d.classList.remove('active'));
+  document.querySelectorAll('.sb-child').forEach(d => d.classList.remove('active'));
+  document.getElementById('sb-export-tab').classList.add('active');
+  const bc = document.getElementById('breadcrumb-area'); if (bc) bc.style.display = 'none';
+  ACTIVE_SLUG = 'export';
+  const pt = document.getElementById('page-title'); if (pt) pt.textContent = 'Export Data — Marketing';
+  const ds = document.getElementById('dept-sub'); if (ds) ds.textContent = 'Granular actuals (transaction-level) & forecast extract';
+  // Default filters
+  if (EXPORT_STATE.fy == null) EXPORT_STATE.fy = STATE.fy || (DATA && DATA.meta && DATA.meta.fy_range ? DATA.meta.fy_range[1] : 2027);
+  if (!EXPORT_STATE.version) EXPORT_STATE.version = 'ACTUALS';
+  renderExportView();
+}
+// Distinct helper
+function _exUniq(arr){ return [...new Set(arr.filter(v => v != null && String(v).trim() !== ''))]; }
+function renderExportView(){
+  const el = document.getElementById('export-content'); if (!el) return;
+  const meta = (DATA && DATA.meta) || {};
+  const coMap = meta.source_company_map || {};
+  const fys = (meta.fy_range ? (function(){ const a=[]; for (let y=meta.fy_range[0]; y<=meta.fy_range[1]; y++) a.push(y); return a; })() : [2026,2027]);
+  // Versions: Actuals pseudo-version + real forecast versions for the chosen FY
+  const verOpts = ['ACTUALS'].concat((meta.available_versions || []).filter(v => v.endsWith('FY' + EXPORT_STATE.fy)));
+  if (!verOpts.includes(EXPORT_STATE.version) && !(EXPORT_STATE.version === 'ACTUALS')) EXPORT_STATE.version = 'ACTUALS';
+  // Companies present (reporting_company for actuals + level_code for forecast) + names
+  const cosDrill = []; const chans = [];
+  (DATA.accounts || []).forEach(a => (a.drill || []).forEach(d => { if (d.reporting_company != null) cosDrill.push(String(d.reporting_company)); if (d.channel) chans.push(d.channel); }));
+  (DATA.accounts || []).forEach(a => (a.forecast_lines || []).forEach(l => { if (l.level_code) cosDrill.push(String(parseInt(l.level_code,10))); if (l.channel) chans.push(l.channel); }));
+  const coList = _exUniq(cosDrill).sort((x,y)=>(+x)-(+y));
+  const chanList = _exUniq(chans).sort();
+  // Categories + GL cascade
+  const cats = _exUniq((DATA.accounts||[]).map(a => a.category)).sort();
+  const glAccts = (DATA.accounts||[]).filter(a => !EXPORT_STATE.category || a.category === EXPORT_STATE.category)
+                    .map(a => ({ code:a.reporting_account, name:a.account_name })).sort((x,y)=>String(x.code).localeCompare(String(y.code)));
+  const monthsSel = EXPORT_STATE.months || new Set(); // empty = all
+  const opt = (v,label,sel) => `<option value="${String(v).replace(/"/g,'&quot;')}"${sel?' selected':''}>${label}</option>`;
+  const isActuals = EXPORT_STATE.version === 'ACTUALS';
+  const rows = exportComputeRows();
+  let h = `<div class="card" style="max-width:1100px">
+    <div class="card-h">Granular Data Export <span class="meta">Actuals = transaction-level · Forecast = that version's line items</span></div>
+    <div style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Version</div>
+        <select id="ex-version" onchange="exSet('version',this.value)">${verOpts.map(v => opt(v, v==='ACTUALS'?'Actuals (transaction detail)':v.replace(/ \| FY\d+$/,''), v===EXPORT_STATE.version)).join('')}</select></div>
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Fiscal Year</div>
+        <select id="ex-fy" onchange="exSet('fy',+this.value)">${fys.map(y => opt(y, 'FY'+(y-2000), y===EXPORT_STATE.fy)).join('')}</select></div>
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Company</div>
+        <select id="ex-co" onchange="exSet('company',this.value)">${opt('','All companies',!EXPORT_STATE.company)}${coList.map(c => opt(c, c+' — '+(coMap[c]||('Co '+c)), c===EXPORT_STATE.company)).join('')}</select></div>
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Channel</div>
+        <select id="ex-ch" onchange="exSet('channel',this.value)">${opt('','All channels',!EXPORT_STATE.channel)}${chanList.map(c => opt(c, c, c===EXPORT_STATE.channel)).join('')}</select></div>
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Expense Category</div>
+        <select id="ex-cat" onchange="exSet('category',this.value)">${opt('','All categories',!EXPORT_STATE.category)}${cats.map(c => opt(c, c, c===EXPORT_STATE.category)).join('')}</select></div>
+      <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">GL Account</div>
+        <select id="ex-gl" onchange="exSet('gl',this.value)">${opt('','All GLs'+(EXPORT_STATE.category?' in category':''),!EXPORT_STATE.gl)}${glAccts.map(g => opt(g.code, g.code+(g.name&&g.name!==g.code?' — '+g.name:''), String(g.code)===String(EXPORT_STATE.gl))).join('')}</select></div>
+    </div>
+    <div style="padding:0 16px 14px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);font-weight:600;margin-bottom:4px">Fiscal Months <span style="text-transform:none;font-weight:400">(none checked = all)</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">${FM_LABELS.map((m,i)=>`<label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" onchange="exToggleMonth(${i+1},this.checked)" ${monthsSel.has(i+1)?'checked':''}> ${m}</label>`).join('')}
+        <button class="btn-sm" onclick="exSetMonths('all')">All</button><button class="btn-sm" onclick="exSetMonths('none')">Clear</button></div>
+    </div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;background:#f8fafc">
+      <button class="btn-sm btn-primary" onclick="exportDownloadCsv()" ${rows.length?'':'disabled'}>⬇ Download CSV (${rows.length.toLocaleString()} rows)</button>
+      <span style="font-size:12px;color:var(--gray)">${isActuals ? 'Transaction-level actuals from the GL drill.' : 'Forecast line items (incl. your unsaved edits) for the selected version.'} Amounts include local + USD columns.</span>
+    </div>
+  </div>`;
+  el.innerHTML = h;
+}
+function exSet(k,v){ EXPORT_STATE[k]=v; if (k==='category') EXPORT_STATE.gl=''; if (k==='fy' && EXPORT_STATE.version!=='ACTUALS') EXPORT_STATE.version='ACTUALS'; renderExportView(); }
+function exToggleMonth(m,on){ if (!EXPORT_STATE.months) EXPORT_STATE.months=new Set(); if (on) EXPORT_STATE.months.add(m); else EXPORT_STATE.months.delete(m); renderExportView(); }
+function exSetMonths(mode){ EXPORT_STATE.months = mode==='all' ? new Set(FM_LABELS.map((_,i)=>i+1)) : new Set(); renderExportView(); }
+// Compute the filtered export rows (also used for the live count).
+function exportComputeRows(){
+  const st = EXPORT_STATE;
+  const months = (st.months && st.months.size) ? st.months : null;   // null = all
+  const catByAcct = {}; (DATA.accounts||[]).forEach(a => { catByAcct[String(a.reporting_account)] = a.category || ''; catByAcct[String(a.reporting_account).replace(/C$/,'')] = a.category || ''; });
+  const nameByAcct = {}; (DATA.accounts||[]).forEach(a => { nameByAcct[String(a.reporting_account)] = a.account_name || ''; });
+  const out = [];
+  const catOk = (acct) => !st.category || (catByAcct[String(acct)] === st.category) || (catByAcct[String(acct).replace(/C$/,'')] === st.category);
+  const glOk = (acct) => !st.gl || String(acct) === String(st.gl) || String(acct).replace(/C$/,'') === String(st.gl).replace(/C$/,'');
+  const chOk = (ch) => !st.channel || String(ch||'') === st.channel;
+  if (st.version === 'ACTUALS'){
+    (DATA.accounts||[]).forEach(a => {
+      const acct = a.reporting_account;
+      if (!catOk(acct) || !glOk(acct)) return;
+      (a.drill||[]).forEach(d => {
+        if (+d.fy !== +st.fy) return;
+        if (months && !months.has(+d.fm)) return;
+        if (st.company && String(d.reporting_company) !== String(st.company)) return;
+        if (!chOk(d.channel)) return;
+        const local = d.amount || 0;
+        const r = fxRate(d.source_company, d.fy, d.fm);
+        const usd = r ? local / r : local;
+        out.push({ kind:'Actual', version:'', fy:d.fy, fm:d.fm, fm_label:FM_LABELS[d.fm-1]||'', reporting_company:d.reporting_company, source_company:d.source_company,
+          dept:d.dept_number||'', channel:d.channel||'', account:String(acct).replace(/C$/,''), account_name:nameByAcct[String(acct)]||'', category:catByAcct[String(acct)]||'',
+          vendor:d.vendor||'', customer:d.customer||'', invoice:d.invoice||'', transaction_type:d.transaction_type||'',
+          currency:coCcy(d.source_company), amount_local:local, amount_usd:usd });
+      });
+    });
+  } else {
+    // Forecast version: gather effective line items (with overrides) across sources for the FY.
+    const ver = st.version.replace(/ \| FY\d+$/,'');
+    const srcs = ['PLANNING_GENERAL','CONTRACT_LABOR','TRAVEL_ENT','SALARIES_WAGES','TOPSIDE_ADJUSTMENTS'];
+    srcs.forEach(s => {
+      let lines = collectFcLines(s, ver, st.fy);
+      lines = applyOverrides(lines, 'marketing', ver + ' | FY' + st.fy, s);
+      lines.forEach(l => {
+        const acct = l.account || l.reporting_account || '';
+        if (!catOk(acct) || !glOk(acct)) return;
+        if (months && !months.has(+l.fm)) return;
+        const co = (l.level_code!=null && String(l.level_code).trim()!=='') ? String(parseInt(l.level_code,10)) : '';
+        if (st.company && co !== String(st.company)) return;
+        if (!chOk(l.channel)) return;
+        const local = l.amount || 0;
+        out.push({ kind:'Forecast', version:ver, fy:l.fy, fm:l.fm, fm_label:FM_LABELS[l.fm-1]||'', reporting_company:co, source_company:'',
+          dept:l.dept_str||'', channel:l.channel||'', account:String(acct).replace(/C$/,''), account_name:nameByAcct[String(acct)]||'', category:catByAcct[String(acct)]||catByAcct[String(acct).replace(/C$/,'')]||'',
+          vendor:l.vendor||'', customer:'', invoice:'', transaction_type:l.expense_type||'',
+          currency:coCcy(co), amount_local:local, amount_usd:fcConvValAt(local, co) });
+      });
+    });
+  }
+  return out;
+}
+// USD value for a forecast local amount at the latest-actuals rate (independent of the display toggle).
+function fcConvValAt(val, co){ const lam=latestActualsMonth(); const r=fxRate(co, lam.fy, lam.fm); return r ? (val||0)/r : (val||0); }
+function exportDownloadCsv(){
+  const rows = exportComputeRows();
+  if (!rows.length){ alert('No rows match the selected filters.'); return; }
+  const cols = ['kind','version','fy','fm','fm_label','reporting_company','source_company','dept','channel','account','account_name','category','vendor','customer','invoice','transaction_type','currency','amount_local','amount_usd'];
+  const esc = v => { if (v==null) return ''; const s=String(v); return /[",\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const lines = [cols.join(',')];
+  rows.forEach(r => lines.push(cols.map(c => esc(c==='amount_local'||c==='amount_usd' ? (Math.round((r[c]||0)*100)/100) : r[c])).join(',')));
+  const csv = lines.join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const verTag = EXPORT_STATE.version==='ACTUALS' ? 'actuals' : EXPORT_STATE.version.replace(/[^A-Za-z0-9]+/g,'_');
+  a.href = url; a.download = `marketing_export_${verTag}_FY${EXPORT_STATE.fy}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 function hideForecastPane(){
@@ -5834,6 +5994,13 @@ function fcSetSort(key){
   renderForecastPane();
 }
 function fcClearSort(){ FORECAST_STATE.sortKey = null; FORECAST_STATE.sortDir = 1; renderForecastPane(); }
+// Currency toggle available directly on the forecast tab (mirrors + syncs the Financial Performance
+// tab's #ccy-toggle) so forecasters don't have to switch tabs to change currency.
+function fcSetCurrency(v){
+  STATE.currency = v;
+  document.querySelectorAll('#ccy-toggle button').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  renderForecastPane();
+}
 // Search: pure DOM filter (no re-render, so typing keeps focus). Hides non-matching rows by their
 // data-search blob (description / vendor / account / name / category / company).
 function fcApplySearch(){
@@ -6474,13 +6641,21 @@ function renderForecastPane(){
                value="${(FORECAST_STATE.search||'').replace(/"/g,'&quot;')}">
         ${FORECAST_STATE.sortKey ? `<button class="btn-sm" onclick="fcClearSort()" title="Clear sort, restore default order">Sort: ${FORECAST_STATE.sortKey} ${FORECAST_STATE.sortDir>0?'▲':'▼'} ✕</button>` : ''}
       </div>` : '';
+  const ccyGroup = `
+      <div class="fc-fb-group">
+        <label class="fc-fb-label">Currency</label>
+        <div class="pill-group">
+          <button type="button" class="${STATE.currency==='USD'?'active':''}" onclick="fcSetCurrency('USD')">USD</button>
+          <button type="button" class="${STATE.currency!=='USD'?'active':''}" onclick="fcSetCurrency('LOCAL')">Local</button>
+        </div>
+      </div>`;
   const editBar = `
     <div class="fc-filter-bar">
       <div class="fc-fb-group">
         <label class="fc-fb-label">FY Scope</label>
         <div id="fc-fy-toggle">${fyChips || '<span style="color:var(--gray);font-size:12px">no forecast years available</span>'}</div>
       </div>
-      ${searchGroup}
+      ${ccyGroup}${searchGroup}
       <div class="fc-fb-group">${actionBtns}</div>
     </div>
     ${ccyNote}${banner}
@@ -7979,6 +8154,7 @@ function loadOverview(){
   hideReclassView();
   hideDataControlsView();
   hideVarianceTabView();
+  hideExportView();
   if (filterbar) filterbar.style.display = 'none';
   if (vmBar) vmBar.style.display = 'none';
   if (ovView) ovView.style.display = 'flex';
@@ -9089,6 +9265,7 @@ function loadVarianceTabView(){
   hideCalendarView();
   hideReclassView();
   hideDataControlsView();
+  hideExportView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');
@@ -10953,6 +11130,7 @@ function loadReclassView(){
   hideCalendarView();
   hideDataControlsView();
   hideVarianceTabView();
+  hideExportView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');
@@ -12533,6 +12711,7 @@ async function loadDataControlsView(){
   hideCalendarView();
   hideReclassView();
   hideVarianceTabView();
+  hideExportView();
   const bvBody = document.getElementById('bva-body');
   if (bvBody) bvBody.style.display = 'none';
   const filterbar = document.querySelector('.filterbar');

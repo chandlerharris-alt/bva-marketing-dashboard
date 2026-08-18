@@ -5,9 +5,11 @@
 -- vendor tooltip + line matching for marketing + advertising accounts.
 
 SELECT
-    CAST(FISCAL_YEAR  AS INTEGER)   AS fiscal_year,
-    CAST(FISCAL_MONTH AS INTEGER)   AS fiscal_month,
-    CAST(SOURCE_COMPANY AS INTEGER) AS source_company,
+    CAST(FISCAL_YEAR  AS INTEGER)      AS fiscal_year,
+    CAST(FISCAL_MONTH AS INTEGER)      AS fiscal_month,
+    CAST(SOURCE_COMPANY AS INTEGER)    AS source_company,
+    CAST(REPORTING_COMPANY AS INTEGER) AS reporting_company,   -- reporting entity (74/33/…) for the Export tab
+    CAST(DEPT_NUMBER AS INTEGER)       AS dept_number,          -- so the Export tab can filter by department
     REPORTING_ACCOUNT,
     ACCOUNT_NAME,
     VENDOR_NAME,
@@ -25,6 +27,6 @@ WHERE ( DEPT_NUMBER IN ({depts_csv})
   AND REPORTING_ACCOUNT IS NOT NULL
   AND REPORTING_ACCOUNT NOT ILIKE '%SUMMARY ENTRY%'
   AND PL_TOTAL IS NOT NULL
-GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
-ORDER BY 1, 2, 3, 4, ABS(SUM(PL_TOTAL)) DESC
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+ORDER BY 1, 2, 3, ABS(SUM(PL_TOTAL)) DESC
 ;

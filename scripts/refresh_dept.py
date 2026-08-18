@@ -809,6 +809,8 @@ def main():
         drill_by_account[ra].append({
             "fy": int(r["fiscal_year"]), "fm": int(r["fiscal_month"]),
             "source_company": int(r["source_company"]) if r.get("source_company") is not None else None,
+            "reporting_company": int(r["reporting_company"]) if r.get("reporting_company") is not None else None,
+            "dept_number": f"{int(r['dept_number']):03d}" if r.get("dept_number") is not None else None,
             "vendor": r.get("vendor_name"), "customer": r.get("customer_name"),
             "invoice": r.get("invoice_number"), "comments": r.get("gl_comments"),
             "channel": (r.get("channel") or "").strip() or None,   # for channel-filtered drill (media)
@@ -818,11 +820,13 @@ def main():
 
     # Attach drill list to its account record. The drill SQL returns oldest-first, so
     # sort MOST-RECENT-first before capping — otherwise the cap drops current-period
-    # transactions (the ones users actually drill into). Cap keeps file size sane.
+    # transactions (the ones users actually drill into). Cap raised to 20000 (2026-08-18) so the
+    # granular Export tab is effectively complete — a few high-volume accounts (advertising/
+    # software/travel) exceeded the old 500 cap. Backstop still bounds a pathological account.
     for (ra, _an), rec in accounts.items():
         lst = drill_by_account.get(ra, [])
         lst.sort(key=lambda x: (x.get("fy") or 0, x.get("fm") or 0, abs(x.get("amount") or 0)), reverse=True)
-        rec["drill"] = lst[:500]
+        rec["drill"] = lst[:20000]
 
     # ---------- Discover available versions across all forecast tables ----------
     all_versions: set[str] = set()
