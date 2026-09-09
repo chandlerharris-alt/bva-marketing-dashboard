@@ -500,19 +500,26 @@ def main():
     # with the SAME values. Summing both double-counts the forecast — e.g. dept-075
     # Travel acct 8955000 and Salaries acct 7875000 each appeared in PG *and* their
     # specialized sheet at identical amounts, so the dashboard showed 2x. The
-    # specialized sheets are the granular source of truth, so drop the PG copy for
-    # any (dept, account) a specialized sheet already supplies.
+    # specialized sheets are the granular source of truth, so drop the PG copy ONLY for the exact
+    # (dept, account, version, month) a specialized sheet actually supplies — NOT for every version
+    # of the account. The old (dept, account) key over-dropped: e.g. Contract Labor 7855000's AOP
+    # lives in PLANNING_GENERAL (CONTRACT_LABOR has no AOP for it), but because 7855000 appeared in
+    # CONTRACT_LABOR for other versions, its AOP was wrongly dropped → $0 in the dashboard vs the
+    # Excel's real budget. Keying on version+month preserves it while still killing true duplicates.
+    def _fm_int(x):
+        try: return int(x.get("fiscal_month"))
+        except (TypeError, ValueError): return None
     specialized_keys = set()
     for _src in (sw, te, cl):
         for _r in _src:
             _ra = (_r.get("reporting_account") or "").strip()
             if _ra:
-                specialized_keys.add((pad_dept(_r.get("dept_str")), _ra))
+                specialized_keys.add((pad_dept(_r.get("dept_str")), _ra, _r.get("version_name"), _fm_int(_r)))
 
     for r in [x for x in pg if x.get("version_name") in ALLOWED_VERSIONS and (x.get("reporting_account") or "").strip() not in excludes]:
         ra = (r.get("reporting_account") or "").strip()
-        if (pad_dept(r.get("dept_str")), ra) in specialized_keys:
-            continue  # de-dupe: this account is authoritatively sourced from a specialized sheet
+        if (pad_dept(r.get("dept_str")), ra, r.get("version_name"), _fm_int(r)) in specialized_keys:
+            continue  # de-dupe: this exact account+version+month is a duplicate of a specialized sheet
         an = ""  # not in PG; key on RA only and we'll match on existing entry's name
         # Try to find the matching account by RA alone — first match wins
         match_key = None
