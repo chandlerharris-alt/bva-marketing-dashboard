@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-14T18:43:48.623Z",
+  "_last_updated": "2026-09-09T19:26:00.807Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -112,11 +112,6 @@
       "id": "uc-1786722480628-759",
       "name": "Partnerships (Paid)",
       "color": "#bfdbfe"
-    },
-    {
-      "id": "uc-1786723007068-140",
-      "name": "reta",
-      "color": "#bbf7d0"
     },
     {
       "id": "uc-1786723732705-84",
@@ -272,12 +267,18 @@
       "france - wholesale co-marketing (excluding amazon)": "uc-1786648605492-184",
       "germany - wholesale co-marketing (excluding amazon)": "uc-1786648605492-184",
       "wholesale co-marketing (excluding amazon)": "uc-1786648605492-184",
-      "dr amazon.ca service": "uc-1786723732705-84"
+      "dr amazon.ca service": "uc-1786723732705-84",
+      "3101 meta accrual": "uc-1783704197218-305",
+      "3101   microsoft online l": "uc-1783715562380-608",
+      "google adj ap accrual": "uc-1783715562380-608",
+      "sara guzman rodriguez - suso x nordictrack": "uc-1783704279044-378",
+      "reddit netherlands - aout 2026": "uc-1783715562380-608"
     },
     "6738000": {
       "51892   meta platforms, i": "uc-1783704197218-305",
       "meta reclass": "uc-1783704197218-305",
-      "meta platforms, inc.": "uc-1783704197218-305"
+      "meta platforms, inc.": "uc-1783704197218-305",
+      "51892   meta platforms": "uc-1783704197218-305"
     },
     "6740000": {
       "usa + can ott": "uc-1783704770063-391",
@@ -307,7 +308,9 @@
       "rx france - equiphotel paris - novembre 2026": "uc-1786648424708-907",
       "electronica koeln - fibo 2026": "uc-1786648424708-907",
       "defense 2000 courses - production visuel avec montage - salo": "uc-1786648424708-907",
-      "the trade desk (reclassed)": "uc-1783704770063-391"
+      "the trade desk (reclassed)": "uc-1783704770063-391",
+      "moritz fiebig - juin 2026": "uc-1783704279044-378",
+      "moritz fiebig - mai 2026": "uc-1783704279044-378"
     },
     "6747000": {
       "tcl": "uc-1786648988526-889",
