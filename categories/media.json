@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-09-09T19:34:10.382Z",
+  "_last_updated": "2026-09-09T19:38:14.554Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "media",
   "categories": [
@@ -121,6 +121,11 @@
     {
       "id": "uc-1786726665560-342",
       "name": "Software",
+      "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1788982675043-118",
+      "name": "Sydney Marathon",
       "color": "#ddd6fe"
     }
   ],
@@ -280,7 +285,9 @@
       "dashing print pty ltd": "uc-1786648424708-907",
       "52722   the trade desk in": "uc-1783704770063-391",
       "ttd accrual": "uc-1783704770063-391",
-      "58521   bravo management": "uc-1783704279044-378"
+      "58521   bravo management": "uc-1783704279044-378",
+      "meta reclass": "uc-1783704197218-305",
+      "athletech media group llc": "uc-1786648988526-889"
     },
     "6738000": {
       "51892   meta platforms, i": "uc-1783704197218-305",
@@ -341,7 +348,8 @@
       "pr - uk - general": "uc-1786648927600-440",
       "pr - travel and oop for agencies": "uc-1786648927600-440",
       "pr - de - general": "uc-1786648927600-440",
-      "pr - aus - general": "uc-1786648927600-440"
+      "pr - aus - general": "uc-1786648927600-440",
+      "sydney marathon accrual": "uc-1788982675043-118"
     },
     "6763000": {
       "us ski & snowboard - fee fy26-fy27": "uc-1783655433879-480",
@@ -350,14 +358,16 @@
       "52930 mccaffe amort": "uc-1783655453583-877",
       "mccaffery": "uc-1783655453583-877",
       "christian mccaffrey - fee fy26": "uc-1783655453583-877",
-      "us ski & snowboard - activation": "uc-1783655433879-480"
+      "us ski & snowboard - activation": "uc-1783655433879-480",
+      "sydney marathon amort": "uc-1788982675043-118"
     },
     "6775000": {
       "freelancer": "uc-1783655155133-408",
       "153805   emily doenges": "uc-1783655155133-408",
       "emily doenges": "uc-1783655155133-408",
       "52443   ascend staffing": "uc-1783655155133-408",
-      "ascend staffing": "uc-1783655155133-408"
+      "ascend staffing": "uc-1783655155133-408",
+      "sydney marathon accrual": "uc-1788982675043-118"
     }
   }
 }
