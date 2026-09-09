@@ -1,2 +1,3 @@
 {"ts":"2026-09-01T18:19:19.290Z","user":"nick.kriz@ifit.com","slug":"media","version":"Working Forecast | FY2027","source":"PLANNING_GENERAL","summary":{"editedKeys":7,"addedKeys":6,"removedKeys":0},"addedCount":6,"removedCount":0,"editedCount":7}
 {"ts":"2026-09-09T19:30:42.820Z","user":"kirsten.spittel@ifit.com","slug":"media","id":"rc-1788982242357-705","action":"add","from_account":"6740000","to_account":"6747000","amount_snapshot":3846.3580194198958}
+{"ts":"2026-09-09T19:41:46.638Z","user":"kirsten.spittel@ifit.com","slug":"marketing","fy":2027,"fm":3,"account":"cat__Paid_Media__uk","action":"add"}
