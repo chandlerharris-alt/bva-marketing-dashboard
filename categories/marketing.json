@@ -1,5 +1,5 @@
 {
-  "_last_updated": "2026-08-14T16:05:40.714Z",
+  "_last_updated": "2026-09-09T19:22:18.567Z",
   "_last_updated_by": "kirsten.spittel@ifit.com",
   "slug": "marketing",
   "categories": [
@@ -127,6 +127,16 @@
       "id": "uc-1786723464814-203",
       "name": "Event",
       "color": "#ddd6fe"
+    },
+    {
+      "id": "uc-1788981639601-566",
+      "name": "Influencer",
+      "color": "#fed7aa"
+    },
+    {
+      "id": "uc-1788981667927-810",
+      "name": "CRM",
+      "color": "#a5f3fc"
     }
   ],
   "descToCategory": {},
@@ -134,7 +144,11 @@
     "7855000": {
       "walktrue ltd": "uc-1786723431573-552",
       "nacho consultirel000": "uc-1786723431573-552",
-      "52443   ascend staffing": "uc-1786723431573-552"
+      "52443   ascend staffing": "uc-1786723431573-552",
+      "nacho consulting": "uc-1788981667927-810"
+    },
+    "7860000": {
+      "dotations aux amortissements aout 2026": "uc-1788981639601-566"
     },
     "7865000": {
       "50610 salesfo amort": "uc-1781098665873-905",
@@ -192,7 +206,8 @@
       "acquia (dam/athena)": "uc-1783705935692-437",
       "qualtrics": "uc-1783547305173-345",
       "branch": "uc-1781098692041-252",
-      "impact tech": "uc-1781098735166-532"
+      "impact tech": "uc-1781098735166-532",
+      "salesforce amort": "uc-1781098665873-905"
     },
     "7905000": {
       "voyagehotels.com - travel to london charlotte + emma": "uc-1786723464814-203"
